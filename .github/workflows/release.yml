@@ -84,11 +84,13 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
-      - name: Configure Android SDK Environment
+      - name: Configure Android SDK and Dynamic NDK
         run: |
+          ACTUAL_NDK="${ANDROID_NDK_HOME:-$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)}"
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "NDK_HOME=/usr/local/lib/android/sdk/ndk/27.2.12479018" >> $GITHUB_ENV
+          echo "NDK_HOME=$ACTUAL_NDK" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ACTUAL_NDK" >> $GITHUB_ENV
           mkdir -p /usr/local/lib/android/sdk/licenses
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > /usr/local/lib/android/sdk/licenses/android-sdk-license
 
