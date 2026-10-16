@@ -15,11 +15,14 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            target: 'universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            tauri_args: '--target universal-apple-darwin'
           - platform: 'ubuntu-22.04'
-            target: 'x86_64-unknown-linux-gnu'
+            rust_targets: 'x86_64-unknown-linux-gnu'
+            tauri_args: '--target x86_64-unknown-linux-gnu'
           - platform: 'windows-latest'
-            target: 'x86_64-pc-windows-msvc'
+            rust_targets: 'x86_64-pc-windows-msvc'
+            tauri_args: '--target x86_64-pc-windows-msvc'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -35,7 +38,7 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Install Linux Build Dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -53,10 +56,10 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Wingnite Story ${{ github.ref_name }}'
-          releaseBody: 'Автоматический релиз Wingnite Story для настольных платформ.'
+          releaseBody: 'Автоматический кроссплатформенный релиз Wingnite Story.'
           releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: ${{ matrix.tauri_args }}
 
   release-android:
     runs-on: ubuntu-latest
@@ -76,13 +79,18 @@ jobs:
           distribution: 'zulu'
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Rust Stable & Android Targets
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Configure Android SDK Environment
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "NDK_HOME=/usr/local/lib/android/sdk/ndk/27.2.12479018" >> $GITHUB_ENV
+          mkdir -p /usr/local/lib/android/sdk/licenses
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > /usr/local/lib/android/sdk/licenses/android-sdk-license
 
       - name: Install Node Dependencies
         run: npm ci
@@ -105,7 +113,8 @@ jobs:
         env:
           KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+          APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
+          $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
 
       - name: Upload Android Release Assets
         uses: softprops/action-gh-release@v2
