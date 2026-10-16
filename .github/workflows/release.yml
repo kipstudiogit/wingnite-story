@@ -102,7 +102,8 @@ jobs:
         env:
           KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          keytool -list -keystore release.keystore -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
 
       - name: Build Android APK and AAB
         run: |
