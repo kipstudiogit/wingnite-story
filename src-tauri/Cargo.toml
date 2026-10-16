@@ -1,0 +1,24 @@
+[package]
+name = "wingnite-story"
+version = "1.0.0"
+description = "Wingnite Story by K. I. P. Studio"
+authors = ["K. I. P. Studio"]
+edition = "2021"
+
+[lib]
+name = "wingnite_story_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.4", features = [] }
+tauri-plugin-opener = "2.7.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+rusqlite = { version = "0.40.2", features = ["bundled-full"] }
+uuid = { version = "1.28.0", features = ["v4"] }
+chrono = "0.4.45"
+rand = "0.10.3"
+thiserror = "2.0.21"
