@@ -1,29 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { EnterpriseStoryItem, EntityRelationItem } from "../types";
-
-interface GraphNodePacked {
-  id: string;
-  index: number;
-  label: string;
-  category: string;
-  isDivine: boolean;
-  mass: number;
-}
-
-interface GraphEdgePacked {
-  sourceIdx: number;
-  targetIdx: number;
-  relationType: string;
-  weight: number;
-}
-
-interface GraphTopologyPayload {
-  nodes: GraphNodePacked[];
-  edges: GraphEdgePacked[];
-  revision: number;
-}
+import type {
+  EnterpriseStoryItem,
+  EntityRelationItem,
+  GraphNodePacked,
+  GraphEdgePacked,
+  GraphTopologyPayload,
+} from "../types";
 
 const GPU_BUFFER_USAGE_VERTEX = 0x0020;
 const GPU_BUFFER_USAGE_COPY_DST = 0x0008;
