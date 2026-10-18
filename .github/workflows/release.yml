@@ -117,24 +117,27 @@ jobs:
       - name: Build Android APK and AAB
         run: |
           npx tauri android init
-          npx tauri android build -- --apk
-          npx tauri android build -- --aab
+          npx tauri android build --apk
+          npx tauri android build --aab
 
-      - name: Sign APK (If Keystore Provided)
-        if: env.KEYSTORE_PRESENT == 'true'
+      - name: Sign or Prepare Android Assets
         env:
           KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
-          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
-          APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
-          $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+          RAW_APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          RAW_AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name "*.aab" | head -n 1)
 
-      - name: Fallback Rename Unsigned APK
-        if: env.KEYSTORE_PRESENT != 'true'
-        env:
-          KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk Wingnite-Story-Android.apk
+          if [ -n "$RAW_AAB" ]; then
+            cp "$RAW_AAB" Wingnite-Story-Android.aab
+          fi
+
+          if [ "$KEYSTORE_PRESENT" = "true" ]; then
+            printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+            APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
+            $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk "$RAW_APK"
+          else
+            cp "$RAW_APK" Wingnite-Story-Android.apk
+          fi
 
       - name: Upload Android Release Assets
         uses: softprops/action-gh-release@v2
@@ -144,4 +147,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             Wingnite-Story-Android.apk
-            src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+            Wingnite-Story-Android.aab
