@@ -2,14 +2,22 @@
 import { computed } from "vue";
 import { marked } from "marked";
 
-const props = defineProps<{
+const { title, category, content, fontSize, hasPrev, hasNext } = defineProps<{
   title: string;
   category: string;
   content: string;
   fontSize: number;
+  hasPrev?: boolean;
+  hasNext?: boolean;
 }>();
 
-const renderedMarkdown = computed(() => marked.parse(props.content) as string);
+const emit = defineEmits<{
+  (e: "prev"): void;
+  (e: "next"): void;
+  (e: "edit"): void;
+}>();
+
+const renderedMarkdown = computed(() => marked.parse(content) as string);
 </script>
 
 <template>
@@ -20,7 +28,10 @@ const renderedMarkdown = computed(() => marked.parse(props.content) as string);
       </div>
 
       <header class="sheet-title-zone">
-        <span class="sheet-badge">{{ category }}</span>
+        <div class="sheet-top-tools">
+          <span class="sheet-badge">{{ category }}</span>
+          <button class="btn-jump-edit" @click="emit('edit')">Редактировать сцену ✎</button>
+        </div>
         <h1 class="sheet-main-title">{{ title }}</h1>
         <div class="sheet-ornament">
           <span class="ornament-wing-left"></span>
@@ -37,6 +48,26 @@ const renderedMarkdown = computed(() => marked.parse(props.content) as string);
           <span class="large-star">✧</span>
           <span>✦</span>
         </div>
+
+        <nav class="reader-chapter-nav">
+          <button
+            class="btn-nav-chapter"
+            :disabled="!hasPrev"
+            @click="emit('prev')"
+          >
+            ← Предыдущая глава
+          </button>
+          <button class="btn-nav-chapter primary" @click="emit('edit')">
+            Перейти в студию ✎
+          </button>
+          <button
+            class="btn-nav-chapter"
+            :disabled="!hasNext"
+            @click="emit('next')"
+          >
+            Следующая глава →
+          </button>
+        </nav>
       </footer>
     </div>
   </section>
@@ -88,6 +119,13 @@ const renderedMarkdown = computed(() => marked.parse(props.content) as string);
   margin-bottom: 40px;
 }
 
+.sheet-top-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .sheet-badge {
   text-transform: uppercase;
   font-size: 11px;
@@ -95,6 +133,17 @@ const renderedMarkdown = computed(() => marked.parse(props.content) as string);
   color: var(--gold);
   font-family: var(--font-sans);
   font-weight: 800;
+}
+
+.btn-jump-edit {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent-cyan);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .sheet-main-title {
@@ -156,6 +205,43 @@ const renderedMarkdown = computed(() => marked.parse(props.content) as string);
 .large-star {
   font-size: 16px;
   opacity: 1;
+}
+
+.reader-chapter-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 36px;
+  gap: 12px;
+}
+
+.btn-nav-chapter {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-nav-chapter.primary {
+  background: var(--accent-indigo);
+  color: #fff;
+  border: none;
+}
+
+.btn-nav-chapter:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-nav-chapter:not(:disabled):hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-indigo);
+  color: #fff;
 }
 
 @media (max-width: 768px) {

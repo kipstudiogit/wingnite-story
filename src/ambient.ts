@@ -3,6 +3,7 @@ class AmbientAudioEngine {
   private rainNode: AudioNode | null = null;
   private fireNode: AudioNode | null = null;
   private windNode: AudioNode | null = null;
+  private windLfo: OscillatorNode | null = null;
   private rainGain: GainNode | null = null;
   private fireGain: GainNode | null = null;
   private windGain: GainNode | null = null;
@@ -111,6 +112,11 @@ class AmbientAudioEngine {
         this.windNode.disconnect();
         this.windNode = null;
       }
+      if (this.windLfo) {
+        this.windLfo.stop();
+        this.windLfo.disconnect();
+        this.windLfo = null;
+      }
       return;
     }
 
@@ -151,6 +157,7 @@ class AmbientAudioEngine {
     noise.start(0);
     lfo.start(0);
     this.windNode = noise;
+    this.windLfo = lfo;
   }
 
   public stopAll() {

@@ -1,7 +1,7 @@
 [package]
 name = "wingnite-story"
 version = "1.0.0"
-description = "Wingnite Story by K. I. P. Studio"
+description = "Wingnite Story Enterprise Production Vault Core"
 authors = ["K. I. P. Studio"]
 edition = "2021"
 
@@ -22,3 +22,7 @@ uuid = { version = "1.28.0", features = ["v4"] }
 chrono = "0.4.45"
 rand = "0.10.3"
 thiserror = "2.0.21"
+parking_lot = "0.12.5"
+sha2 = "0.11.1"
+hex = "0.4.3"
+ropey = "1.6.1"

@@ -40,14 +40,30 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Install Linux Build Dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev
 
       - name: Install Node Dependencies
         run: npm ci
+
+      - name: Verify TypeScript Compilation
+        run: npm run build
 
       - name: Compile and Bundle Tauri Application
         uses: tauri-apps/tauri-action@v0
@@ -56,13 +72,14 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Wingnite Story ${{ github.ref_name }}'
-          releaseBody: 'Автоматический кроссплатформенный релиз Wingnite Story.'
+          releaseBody: 'Автоматический мультиплатформенный релиз Wingnite Story Enterprise.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri_args }}
 
   release-android:
     runs-on: ubuntu-latest
+    needs: release-desktop
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -97,27 +114,27 @@ jobs:
       - name: Install Node Dependencies
         run: npm ci
 
-      - name: Restore Android Keystore
-        if: env.KEYSTORE_PRESENT == 'true'
-        env:
-          KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
-          keytool -list -keystore release.keystore -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-
       - name: Build Android APK and AAB
         run: |
-          npm run tauri android init
-          npm run tauri android build -- --apk
-          npm run tauri android build -- --aab
+          npx tauri android init
+          npx tauri android build -- --apk
+          npx tauri android build -- --aab
 
       - name: Sign APK (If Keystore Provided)
         if: env.KEYSTORE_PRESENT == 'true'
         env:
           KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
           APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
           $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+      - name: Fallback Rename Unsigned APK
+        if: env.KEYSTORE_PRESENT != 'true'
+        env:
+          KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk Wingnite-Story-Android.apk
 
       - name: Upload Android Release Assets
         uses: softprops/action-gh-release@v2
@@ -127,5 +144,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             Wingnite-Story-Android.apk
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
             src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab

@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { StoryItem, FtsSearchResult } from "../types";
+import type { EnterpriseStoryItem, FtsResultItem } from "../types";
 
-const props = defineProps<{
-  stories: StoryItem[];
+const { stories } = defineProps<{
+  stories: EnterpriseStoryItem[];
 }>();
 
 const emit = defineEmits<{
-  (e: "select", story: StoryItem): void;
+  (e: "select", story: EnterpriseStoryItem): void;
   (e: "close"): void;
 }>();
 
 const search = ref("");
 const selectedIndex = ref(0);
 const inputRef = ref<HTMLInputElement | null>(null);
-const ftsResults = ref<FtsSearchResult[]>([]);
+const ftsResults = ref<FtsResultItem[]>([]);
 let searchTimer: number | null = null;
 
 watch(search, (query) => {
@@ -27,7 +27,7 @@ watch(search, (query) => {
   }
   searchTimer = window.setTimeout(async () => {
     try {
-      ftsResults.value = await invoke<FtsSearchResult[]>("search_stories_fts", { query: q });
+      ftsResults.value = await invoke<FtsResultItem[]>("execute_fts_search", { query: q });
       selectedIndex.value = 0;
     } catch {
       ftsResults.value = [];
@@ -38,7 +38,7 @@ watch(search, (query) => {
 const displayItems = computed(() => {
   if (search.value.trim() && ftsResults.value.length > 0) {
     return ftsResults.value.map((res) => {
-      const match = props.stories.find((s) => s.id === res.id);
+      const match = stories.find((s) => s.id === res.id);
       return {
         id: res.id,
         title: res.title,
@@ -49,6 +49,8 @@ const displayItems = computed(() => {
           title: res.title,
           category: res.category,
           content: "",
+          revision: 1,
+          contentHash: "",
           updatedAt: 0,
         },
       };
@@ -57,10 +59,10 @@ const displayItems = computed(() => {
 
   const q = search.value.toLowerCase().trim();
   const list = q
-    ? props.stories.filter(
+    ? stories.filter(
         (s) => s.title.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
       )
-    : props.stories;
+    : stories;
 
   return list.map((s) => ({
     id: s.id,
@@ -166,7 +168,7 @@ onUnmounted(() => {
   background: var(--bg-surface-solid);
   border: 1px solid var(--border-strong);
   border-radius: 18px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9), var(--specular-prismatic);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9);
   overflow: hidden;
   max-height: 480px;
   display: flex;

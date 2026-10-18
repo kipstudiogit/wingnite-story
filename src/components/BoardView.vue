@@ -9,6 +9,7 @@ const { actsList, stories } = defineProps<{
 
 const emit = defineEmits<{
   (e: "select", story: StoryItem): void;
+  (e: "create", category: string): void;
 }>();
 
 interface ProcessedStoryItem extends StoryItem {
@@ -33,13 +34,19 @@ function countWords(str: string): number {
   return count;
 }
 
+const resolvedActs = computed(() => {
+  if (actsList.length > 0) return actsList;
+  return ["Акт I", "Акт II", "Акт III", "Кульминация"];
+});
+
 const storiesByAct = computed(() => {
   const map = new Map<string, ProcessedStoryItem[]>();
-  for (const act of actsList) {
+  for (const act of resolvedActs.value) {
     map.set(act, []);
   }
   for (const s of stories) {
-    const list = map.get(s.category);
+    const targetKey = map.has(s.category) ? s.category : resolvedActs.value[0];
+    const list = map.get(targetKey);
     if (list) {
       const words = countWords(s.content);
       list.push({
@@ -72,13 +79,16 @@ function handleCardMouseLeave(id: string) {
 <template>
   <section class="stage-board">
     <div class="board-acts-track">
-      <div v-for="act in actsList" :key="act" class="board-act-column">
+      <div v-for="act in resolvedActs" :key="act" class="board-act-column">
         <header class="act-col-header">
           <div class="act-title-wrapper">
             <span class="act-status-flame"></span>
             <h3 class="act-name">{{ act }}</h3>
           </div>
-          <span class="act-badge-counter">{{ storiesByAct.get(act)?.length ?? 0 }}</span>
+          <div class="act-header-right">
+            <span class="act-badge-counter">{{ storiesByAct.get(act)?.length ?? 0 }}</span>
+            <button class="btn-act-add" title="Добавить сцену в этот акт" @click="emit('create', act)">+</button>
+          </div>
         </header>
 
         <div class="act-cards-scroller">
@@ -110,6 +120,11 @@ function handleCardMouseLeave(id: string) {
               </div>
               <span class="card-meter-label">{{ item.progressPercent }}% нормы</span>
             </div>
+          </div>
+
+          <div v-if="(storiesByAct.get(act) ?? []).length === 0" class="empty-column-box">
+            <p>Нет сцен в блоке</p>
+            <button class="btn-create-card-inline" @click="emit('create', act)">+ Новая сцена</button>
           </div>
         </div>
       </div>
@@ -176,6 +191,12 @@ function handleCardMouseLeave(id: string) {
   color: var(--text-main);
 }
 
+.act-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .act-badge-counter {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
@@ -185,6 +206,20 @@ function handleCardMouseLeave(id: string) {
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text-muted);
+}
+
+.btn-act-add {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .act-cards-scroller {
@@ -293,5 +328,27 @@ function handleCardMouseLeave(id: string) {
   font-weight: 600;
   font-family: var(--font-mono);
   color: var(--text-dark);
+}
+
+.empty-column-box {
+  padding: 30px 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-create-card-inline {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--accent-cyan);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 </style>

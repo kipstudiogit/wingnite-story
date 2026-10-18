@@ -1,14 +1,16 @@
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { StoryItem, SnapshotItem } from "../types";
+import type { EnterpriseStoryItem, SnapshotItem } from "../types";
 
 export function useStories() {
-  const stories = ref<StoryItem[]>([]);
+  const stories = ref<EnterpriseStoryItem[]>([]);
   const snapshots = ref<SnapshotItem[]>([]);
   const activeId = ref<string>("");
   const currentTitle = ref<string>("Глава 1: Тени Цитадели");
   const currentCategory = ref<string>("Акт I");
-  const currentContent = ref<string>("# Глава 1: Тени Цитадели\n\nСеверный ветер трепал штандарты над каменными бастионами цитадели, когда караван беглецов перевалил через заснеженный перевал...\n\n---\n\n> «История никогда не начинается в тишине. Ей всегда предшествует раскат грома.»\n\nОн коснулся рукояти старинного клинка, чувствуя холод древней стали.");
+  const currentContent = ref<string>(
+    "# Глава 1: Тени Цитадели\n\nСеверный ветер трепал штандарты над каменными бастионами цитадели, когда караван беглецов перевалил через заснеженный перевал...\n\n---\n\n> «История никогда не начинается в тишине. Ей всегда предшествует раскат грома.»\n\nОн коснулся рукояти старинного клинка, чувствуя холод древней стали."
+  );
   const statusMsg = ref<string>("");
 
   const activeStory = computed(() => stories.value.find((s) => s.id === activeId.value));
@@ -46,7 +48,7 @@ export function useStories() {
 
   async function loadStories() {
     try {
-      const list = await invoke<StoryItem[]>("get_stories");
+      const list = await invoke<EnterpriseStoryItem[]>("fetch_stories");
       stories.value = list;
       if (list.length > 0 && !activeId.value) {
         selectStory(list[0]);
@@ -68,7 +70,7 @@ export function useStories() {
     }
   }
 
-  function selectStory(story: StoryItem) {
+  function selectStory(story: EnterpriseStoryItem) {
     activeId.value = story.id;
     currentTitle.value = story.title;
     currentContent.value = story.content;
@@ -78,14 +80,16 @@ export function useStories() {
 
   async function saveCurrentStory() {
     try {
-      const payload: StoryItem = {
+      const payload: EnterpriseStoryItem = {
         id: activeId.value,
         title: currentTitle.value,
         content: currentContent.value,
         category: currentCategory.value,
+        revision: activeStory.value?.revision ?? 1,
+        contentHash: activeStory.value?.contentHash ?? "",
         updatedAt: 0,
       };
-      const saved = await invoke<StoryItem>("save_story", { story: payload });
+      const saved = await invoke<EnterpriseStoryItem>("save_story", { story: payload });
       activeId.value = saved.id;
       statusMsg.value = "Синхронизировано";
       await loadStories();
@@ -97,7 +101,7 @@ export function useStories() {
   async function deleteCurrentStory() {
     if (!activeId.value) return;
     try {
-      await invoke("delete_story", { id: activeId.value });
+      await invoke("delete_story", { id: activeId.value, operator: "Legacy-Operator" });
       activeId.value = "";
       currentTitle.value = "";
       currentContent.value = "";

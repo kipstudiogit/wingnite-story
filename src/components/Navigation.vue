@@ -5,16 +5,18 @@ import { ambientEngine } from "../ambient";
 
 const currentTab = defineModel<AppTab>("currentTab", { required: true });
 
-const { sprintActive, sprintFormattedTime, sprintDelta } = defineProps<{
+const { sprintActive, sprintFormattedTime, sprintDelta, isSyncing = false } = defineProps<{
   sprintActive: boolean;
   sprintFormattedTime: string;
   sprintDelta: number;
+  isSyncing?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "toggleToc"): void;
   (e: "openPalette"): void;
   (e: "toggleSprint"): void;
+  (e: "save"): void;
 }>();
 
 const ambientRain = ref(false);
@@ -182,6 +184,20 @@ function toggleWind() {
           </span>
         </button>
       </div>
+
+      <button
+        :class="['tactile-save-trigger', { saving: isSyncing }]"
+        :disabled="isSyncing"
+        title="Сохранить коммит (Ctrl+S / Cmd+S)"
+        @click="emit('save')"
+      >
+        <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
+        <span class="save-label">{{ isSyncing ? '...' : 'Сохранить' }}</span>
+      </button>
 
       <button
         :class="['tactile-sprint-trigger', { running: sprintActive }]"
@@ -385,6 +401,26 @@ function toggleWind() {
 @keyframes wave-bar-motion {
   0% { height: 1.5px; }
   100% { height: 5px; }
+}
+
+.tactile-save-trigger {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 18px var(--accent-indigo-glow);
+}
+
+.tactile-save-trigger.saving {
+  opacity: 0.6;
 }
 
 .tactile-sprint-trigger {

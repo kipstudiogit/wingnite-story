@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { TimelineEventItem, StoryItem } from "../types";
+import type { EnterpriseStoryItem, TimelineEventItem } from "../types";
 
-const { stories } = defineProps<{
-  stories: StoryItem[];
+const { stories, operator = "Timeline-Executive" } = defineProps<{
+  stories: EnterpriseStoryItem[];
+  operator?: string;
 }>();
 
 const emit = defineEmits<{
-  (e: "selectStory", story: StoryItem): void;
+  (e: "selectStory", story: EnterpriseStoryItem): void;
 }>();
 
 const events = ref<TimelineEventItem[]>([]);
@@ -19,68 +20,19 @@ const newTitle = ref("");
 const newDesc = ref("");
 const newAct = ref("Акт I");
 const newChar = ref("Элион");
-const newIntensity = ref(50);
+const newIntensity = ref(60);
 const newStoryId = ref<string>("");
 
 async function loadTimeline() {
   try {
-    const list = await invoke<TimelineEventItem[]>("get_timeline_events");
-    if (list.length === 0) {
-      await seedDefaultTimeline();
-    } else {
-      events.value = list;
+    const list = await invoke<TimelineEventItem[]>("fetch_timeline_events");
+    events.value = list;
+    if (list.length > 0 && !selectedEvent.value) {
+      selectedEvent.value = list[0];
     }
   } catch {
     events.value = [];
   }
-}
-
-async function seedDefaultTimeline() {
-  const defaults: Omit<TimelineEventItem, "id">[] = [
-    {
-      storyId: stories[0]?.id ?? null,
-      title: "Падение Северного Бастиона",
-      description: "Первое нарушение барьера временного континуума. Отступление стражей.",
-      act: "Акт I",
-      characterName: "Самаэль",
-      temporalOrder: 1,
-      intensity: 85,
-    },
-    {
-      storyId: stories[1]?.id ?? null,
-      title: "Обретение Ока Бесконечности",
-      description: "Тайная экспедиция в Бездну. Извлечение первичной реликвии.",
-      act: "Акт I",
-      characterName: "Элион",
-      temporalOrder: 2,
-      intensity: 60,
-    },
-    {
-      storyId: null,
-      title: "Совет Расколотых Престолов",
-      description: "Дипломатический ультиматум демиургов. Введение запрета на временную магию.",
-      act: "Акт II",
-      characterName: "Совет Ордена",
-      temporalOrder: 3,
-      intensity: 75,
-    },
-    {
-      storyId: null,
-      title: "Затмение Двух Солнц",
-      description: "Снятие печатей со Святилища Сил. Начало обратного отсчета.",
-      act: "Акт III",
-      characterName: "Элион",
-      temporalOrder: 4,
-      intensity: 95,
-    },
-  ];
-
-  for (const item of defaults) {
-    await invoke<TimelineEventItem>("save_timeline_event", {
-      event: { ...item, id: "" },
-    });
-  }
-  events.value = await invoke<TimelineEventItem[]>("get_timeline_events");
 }
 
 async function handleCreateEvent() {
@@ -95,9 +47,14 @@ async function handleCreateEvent() {
     temporalOrder: events.value.length + 1,
     intensity: newIntensity.value,
   };
+
   try {
-    const saved = await invoke<TimelineEventItem>("save_timeline_event", { event: payload });
+    const saved = await invoke<TimelineEventItem>("mutate_timeline_event", {
+      event: payload,
+      operator,
+    });
     events.value.push(saved);
+    selectedEvent.value = saved;
     showCreateModal.value = false;
     newTitle.value = "";
     newDesc.value = "";
@@ -106,10 +63,10 @@ async function handleCreateEvent() {
 
 async function handleDeleteEvent(id: string) {
   try {
-    await invoke("delete_timeline_event", { id });
+    await invoke("delete_timeline_event", { id, operator });
     events.value = events.value.filter((e) => e.id !== id);
     if (selectedEvent.value?.id === id) {
-      selectedEvent.value = null;
+      selectedEvent.value = events.value.length > 0 ? events.value[0] : null;
     }
   } catch {}
 }
@@ -118,6 +75,24 @@ const charactersList = computed(() => {
   const set = new Set<string>();
   events.value.forEach((e) => set.add(e.characterName));
   return Array.from(set);
+});
+
+const tensionPathData = computed(() => {
+  if (events.value.length === 0) return "";
+  if (events.value.length === 1) {
+    const y = 110 - (events.value[0].intensity / 100) * 90;
+    return `M 20 ${y} L 980 ${y}`;
+  }
+  return events.value.reduce((acc, ev, idx) => {
+    const x = (idx / (events.value.length - 1)) * 960 + 20;
+    const y = 110 - (ev.intensity / 100) * 90;
+    return `${acc} L ${x} ${y}`;
+  }, `M 20 ${110 - (events.value[0].intensity / 100) * 90}`);
+});
+
+const tensionFillData = computed(() => {
+  if (!tensionPathData.value || events.value.length === 0) return "";
+  return `${tensionPathData.value} L 980 120 L 20 120 Z`;
 });
 
 function jumpToLinkedStory(storyId: string | null | undefined) {
@@ -134,64 +109,51 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="stage-timeline">
+  <section class="enterprise-timeline-stage">
     <header class="timeline-command-bar">
       <div class="command-title-group">
-        <h2>Хронологический Таймлайн</h2>
-        <p>Многопоточная шкала событий, арок и драматического напряжения</p>
+        <h2>Хронологическая матрица</h2>
+        <p>Многопоточный реестр вех сюжета и амплитуды драматического напряжения</p>
       </div>
 
       <div class="command-btn-group">
         <button class="btn-create-milestone" @click="showCreateModal = true">
-          <span class="btn-flare"></span>
-          + Веха сюжета
+          <span>+ Новая веха</span>
         </button>
       </div>
     </header>
 
     <div class="tension-graph-card">
       <div class="graph-legend">
-        <span>График драматического напряжения</span>
-        <span class="legend-scale">0% — Штиль &nbsp;•&nbsp; 100% — Кульминация</span>
+        <span>График драматического напряжения (Telemetry Tensor)</span>
+        <span class="legend-scale">0% Покой &nbsp;•&nbsp; 100% Кульминация</span>
       </div>
 
       <div class="tension-svg-wrap">
         <svg class="tension-svg" viewBox="0 0 1000 120" preserveAspectRatio="none">
           <defs>
-            <linearGradient id="tensionGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.8" />
-              <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.9" />
+            <linearGradient id="tensorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.9" />
+              <stop offset="50%" stop-color="#06b6d4" stop-opacity="0.95" />
               <stop offset="100%" stop-color="#f59e0b" stop-opacity="1" />
             </linearGradient>
-            <linearGradient id="tensionFill" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.3" />
+            <linearGradient id="tensorFill" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.35" />
               <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
             </linearGradient>
           </defs>
 
           <path
-            v-if="events.length > 1"
-            :d="
-              events.reduce((acc, ev, idx) => {
-                const x = (idx / (events.length - 1)) * 960 + 20;
-                const y = 110 - (ev.intensity / 100) * 90;
-                return `${acc} L ${x} ${y}`;
-              }, `M 20 ${110 - (events[0]?.intensity / 100) * 90}`) + ' L 980 120 L 20 120 Z'
-            "
-            fill="url(#tensionFill)"
+            v-if="tensionFillData"
+            :d="tensionFillData"
+            fill="url(#tensorFill)"
           />
 
           <path
-            v-if="events.length > 1"
-            :d="
-              events.reduce((acc, ev, idx) => {
-                const x = (idx / (events.length - 1)) * 960 + 20;
-                const y = 110 - (ev.intensity / 100) * 90;
-                return `${acc} L ${x} ${y}`;
-              }, `M 20 ${110 - (events[0]?.intensity / 100) * 90}`)
-            "
+            v-if="tensionPathData"
+            :d="tensionPathData"
             fill="none"
-            stroke="url(#tensionGrad)"
+            stroke="url(#tensorGrad)"
             stroke-width="3"
             stroke-linecap="round"
           />
@@ -199,13 +161,31 @@ onMounted(() => {
           <circle
             v-for="(ev, idx) in events"
             :key="ev.id"
-            :cx="(idx / (events.length - 1 || 1)) * 960 + 20"
+            :cx="(idx / (Math.max(1, events.length - 1))) * 960 + 20"
             :cy="110 - (ev.intensity / 100) * 90"
             r="6"
-            class="tension-pulse-dot"
+            :class="['tension-pulse-dot', { active: selectedEvent?.id === ev.id }]"
             @click="selectedEvent = ev"
           />
         </svg>
+      </div>
+    </div>
+
+    <div v-if="selectedEvent" class="selected-milestone-banner">
+      <div class="milestone-banner-left">
+        <span class="banner-badge">{{ selectedEvent.act }} • {{ selectedEvent.characterName }}</span>
+        <h4>{{ selectedEvent.title }}</h4>
+        <p>{{ selectedEvent.description }}</p>
+      </div>
+      <div class="milestone-banner-right">
+        <span class="intensity-tag">Напряжение: {{ selectedEvent.intensity }}%</span>
+        <button
+          v-if="selectedEvent.storyId"
+          class="btn-open-linked-scene"
+          @click="jumpToLinkedStory(selectedEvent.storyId)"
+        >
+          Перейти к привязанной сцене →
+        </button>
       </div>
     </div>
 
@@ -243,25 +223,30 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
+      <div v-if="events.length === 0" class="timeline-empty-card">
+        <p>Хронологическая матрица пуста</p>
+        <button class="btn-create-milestone" @click="showCreateModal = true">+ Создать первую сюжетную веху</button>
+      </div>
     </div>
 
     <div v-if="showCreateModal" class="modal-backdrop" @click.self="showCreateModal = false">
       <div class="modal-window">
-        <h3>Новая веха хронологии</h3>
+        <h3>Фиксация сюжетной вехи</h3>
         <div class="form-inputs">
-          <input v-model="newTitle" class="modal-input" placeholder="Название события..." />
+          <input v-model="newTitle" class="modal-input" placeholder="Название вехи..." />
           <textarea
             v-model="newDesc"
             class="modal-textarea"
-            placeholder="Что произошло в этот момент истории..."
+            placeholder="Описание события и его влияние на мир..."
           ></textarea>
           <div class="modal-row">
             <input v-model="newAct" class="modal-input" placeholder="Акт (напр. Акт I)" />
-            <input v-model="newChar" class="modal-input" placeholder="Действующее лицо / Фракция" />
+            <input v-model="newChar" class="modal-input" placeholder="Сущность / Персонаж" />
           </div>
           <div class="modal-row">
             <label class="slider-label">
-              Драматизм: <b>{{ newIntensity }}%</b>
+              Интенсивность: <b>{{ newIntensity }}%</b>
               <input v-model.number="newIntensity" type="range" min="10" max="100" class="modal-slider" />
             </label>
             <select v-model="newStoryId" class="modal-select">
@@ -280,13 +265,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.stage-timeline {
+.enterprise-timeline-stage {
   flex: 1;
   overflow-y: auto;
-  padding: 32px 36px calc(var(--safe-bottom) + 80px) 36px;
+  padding: 28px 32px calc(var(--safe-bottom) + 80px) 32px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
+  background: var(--bg-deep);
 }
 
 .timeline-command-bar {
@@ -296,7 +282,7 @@ onMounted(() => {
 }
 
 .command-title-group h2 {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 900;
   letter-spacing: -0.02em;
   background: linear-gradient(135deg, #fff 50%, var(--accent-cyan) 100%);
@@ -312,39 +298,20 @@ onMounted(() => {
 }
 
 .btn-create-milestone {
-  position: relative;
   background: linear-gradient(135deg, var(--accent-indigo) 0%, #4338ca 100%);
   color: #fff;
   border: none;
-  box-shadow: 0 4px 20px var(--accent-indigo-glow), var(--specular-prismatic);
   border-radius: 12px;
   padding: 10px 20px;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  overflow: hidden;
-}
-
-.btn-flare {
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  transform: skewX(-25deg);
-  transition: left 0.6s ease;
-}
-
-.btn-create-milestone:hover .btn-flare {
-  left: 200%;
 }
 
 .tension-graph-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-quantum), var(--specular-high);
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 18px 24px;
   display: flex;
   flex-direction: column;
@@ -384,21 +351,66 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.tension-pulse-dot:hover {
-  r: 9;
+.tension-pulse-dot:hover,
+.tension-pulse-dot.active {
+  r: 8;
   stroke: var(--accent-cyan);
+  fill: var(--accent-cyan);
+}
+
+.selected-milestone-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--accent-indigo);
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.banner-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+}
+
+.milestone-banner-left h4 {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 4px 0;
+}
+
+.milestone-banner-left p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.milestone-banner-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.intensity-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-gold);
 }
 
 .swimlanes-container {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .swimlane-track {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
@@ -416,15 +428,14 @@ onMounted(() => {
   height: 8px;
   border-radius: 50%;
   background: var(--accent-cyan);
-  box-shadow: 0 0 10px var(--accent-cyan);
 }
 
 .actor-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--text-pure);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .swimlane-events-row {
@@ -437,24 +448,19 @@ onMounted(() => {
 .milestone-card {
   width: 280px;
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border);
-  box-shadow: var(--specular-high);
   border-radius: 12px;
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   cursor: pointer;
-  transition: all 0.25s ease;
 }
 
-.milestone-card:hover,
 .milestone-card.active {
   background: var(--bg-card-hover);
   border-color: var(--border-accent);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
 }
 
 .milestone-top {
@@ -509,11 +515,19 @@ onMounted(() => {
   border: none;
   color: var(--text-dim);
   cursor: pointer;
-  padding: 4px;
 }
 
-.btn-del-milestone:hover {
-  color: var(--accent-rose);
+.timeline-empty-card {
+  padding: 60px 20px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-dim);
 }
 
 .modal-backdrop {
@@ -529,20 +543,14 @@ onMounted(() => {
 
 .modal-window {
   width: 90%;
-  max-width: 520px;
+  max-width: 500px;
   background: var(--bg-surface-solid);
   border: 1px solid var(--border-strong);
-  border-radius: 18px;
-  box-shadow: var(--shadow-quantum);
+  border-radius: 16px;
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-
-.modal-window h3 {
-  font-size: 18px;
-  font-weight: 800;
+  gap: 16px;
 }
 
 .form-inputs {
@@ -612,7 +620,7 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .stage-timeline {
+  .enterprise-timeline-stage {
     padding: 16px 14px calc(var(--safe-bottom) + 84px) 14px;
   }
 }

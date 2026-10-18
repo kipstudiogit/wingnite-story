@@ -9,7 +9,7 @@ const { stories } = defineProps<{
 
 const emit = defineEmits<{
   (e: "select", story: StoryItem): void;
-  (e: "createEntity", type: "artifact" | "pantheon" | "sanctuary"): void;
+  (e: "createEntity", type: "artifact" | "pantheon" | "sanctuary" | "character"): void;
 }>();
 
 const filterCategory = ref<string>("all");
@@ -98,6 +98,10 @@ function handleMouseLeave(id: string) {
       </div>
 
       <div class="codex-action-cluster">
+        <button class="btn-summon character" @click="emit('createEntity', 'character')">
+          <span class="btn-flare"></span>
+          + Персонаж
+        </button>
         <button class="btn-summon relic" @click="emit('createEntity', 'artifact')">
           <span class="btn-flare"></span>
           + Артефакт
@@ -195,6 +199,14 @@ function handleMouseLeave(id: string) {
           <span class="resonance-digit">{{ item.resonance }}%</span>
         </div>
       </div>
+
+      <div v-if="categorizedCodex.length === 0" class="codex-empty-state">
+        <p>Сущностей данной категории пока не зафиксировано</p>
+        <div class="empty-btn-cluster">
+          <button class="btn-summon character" @click="emit('createEntity', 'character')">+ Создать персонажа</button>
+          <button class="btn-summon relic" @click="emit('createEntity', 'artifact')">+ Создать артефакт</button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -237,6 +249,7 @@ function handleMouseLeave(id: string) {
 .codex-action-cluster {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .btn-summon {
@@ -250,6 +263,11 @@ function handleMouseLeave(id: string) {
   overflow: hidden;
   color: #fff;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-summon.character {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
 }
 
 .btn-summon.relic {
@@ -508,6 +526,22 @@ function handleMouseLeave(id: string) {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-pure);
+}
+
+.codex-empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.empty-btn-cluster {
+  display: flex;
+  gap: 10px;
 }
 
 @media (max-width: 768px) {
