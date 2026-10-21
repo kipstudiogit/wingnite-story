@@ -240,7 +240,10 @@ onMounted(() => {
       </button>
     </div>
 
-    <div v-show="studioMode !== 'preview'" class="editor-chassis">
+    <div
+      v-show="studioMode !== 'preview' && mobileActiveTab !== 'preview'"
+      class="editor-chassis"
+    >
       <div class="editor-telemetry-header">
         <div class="meta-input-capsules">
           <input
@@ -282,10 +285,10 @@ onMounted(() => {
           </div>
 
           <button
-            class="btn-plasma-save"
+            class="btn-plasma-save desktop-only-btn"
             :class="{ saving: isSyncing, success: saveSuccessFeedback }"
             :disabled="isSyncing"
-            title="Сохранить коммит (Ctrl+S / Cmd+S)"
+            title="Сохранить коммит"
             @click="emit('save')"
           >
             <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -339,6 +342,7 @@ onMounted(() => {
           </button>
 
           <button
+            v-if="hasActive"
             class="tactile-icon-btn btn-danger-tone"
             :title="hasActive ? 'Удалить сцену' : 'Очистить черновик'"
             @click="emit('delete')"
@@ -476,9 +480,10 @@ onMounted(() => {
 
     <div
       v-if="studioMode === 'split' || studioMode === 'preview' || mobileActiveTab === 'preview'"
-      :class="['preview-chassis', { 'full-screen-preview': studioMode === 'preview' }]"
+      v-show="mobileActiveTab === 'preview' || studioMode === 'split' || studioMode === 'preview'"
+      :class="['preview-chassis', { 'full-screen-preview': studioMode === 'preview' || mobileActiveTab === 'preview' }]"
     >
-      <div class="preview-toolbar-meta" v-if="studioMode === 'preview'">
+      <div class="preview-toolbar-meta" v-if="studioMode === 'preview' || mobileActiveTab === 'preview'">
         <span class="preview-badge-category">{{ category }}</span>
         <h2 class="preview-title-heading">{{ title }}</h2>
       </div>
@@ -496,6 +501,7 @@ onMounted(() => {
 .enterprise-workbench-studio {
   flex: 1;
   display: flex;
+  flex-direction: row;
   overflow: hidden;
   height: 100%;
   background: var(--bg-deep);
@@ -504,28 +510,26 @@ onMounted(() => {
 
 .mobile-dual-nav {
   display: none;
-  background: var(--bg-surface-solid);
-  padding: 8px;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 .dual-tab-pill {
   flex: 1;
-  padding: 10px;
-  background: transparent;
-  border: 1px solid transparent;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-muted);
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .dual-tab-pill.active {
-  background: var(--bg-card);
-  border-color: var(--border);
-  color: var(--text-pure);
+  background: var(--accent-indigo);
+  border-color: var(--accent-indigo);
+  color: #fff;
+  box-shadow: 0 2px 10px var(--accent-indigo-glow);
 }
 
 .enterprise-workbench-studio.mode-split .editor-chassis {
@@ -565,6 +569,8 @@ onMounted(() => {
   padding: 16px 22px;
   gap: 10px;
   height: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .editor-telemetry-header {
@@ -577,6 +583,7 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex: 1;
+  min-width: 0;
 }
 
 .capsule-title-input {
@@ -591,6 +598,7 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 700;
   outline: none;
+  min-width: 0;
 }
 
 .capsule-category-input {
@@ -604,12 +612,14 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   outline: none;
+  min-width: 0;
 }
 
 .header-action-controls {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .revision-telemetry-badge {
@@ -803,6 +813,7 @@ onMounted(() => {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 20px;
+  min-height: 0;
 }
 
 .enterprise-textarea {
@@ -872,33 +883,71 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 820px) {
+  .enterprise-workbench-studio {
+    flex-direction: column !important;
+  }
+
   .mobile-dual-nav {
-    display: flex;
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+    padding: 8px 12px;
+    background: var(--bg-surface-solid);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    flex-shrink: 0;
   }
+
   .editor-chassis {
-    padding: 10px;
+    padding: 10px 12px;
+    width: 100% !important;
   }
+
   .editor-telemetry-header {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
   }
+
+  .desktop-only-btn {
+    display: none !important;
+  }
+
+  .quantum-tools-strip {
+    display: none !important;
+  }
+
   .header-action-controls {
     justify-content: space-between;
+    width: 100%;
   }
-  .enterprise-workbench-studio.mobile-tab-editor .editor-chassis {
-    display: flex;
+
+  .editor-viewport-well {
+    padding: 14px 12px;
   }
-  .enterprise-workbench-studio.mobile-tab-editor .preview-chassis {
-    display: none !important;
+
+  .enterprise-textarea {
+    font-size: 15px;
+    line-height: 1.75;
   }
-  .enterprise-workbench-studio.mobile-tab-preview .editor-chassis {
-    display: none !important;
+
+  .preview-chassis {
+    padding: 16px 14px;
+    width: 100% !important;
   }
-  .enterprise-workbench-studio.mobile-tab-preview .preview-chassis {
-    display: block !important;
-    flex: 1;
-    padding: 16px;
+
+  :deep(.analytics-drawer),
+  :deep(.lore-drawer),
+  :deep(.vault-drawer) {
+    width: 100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    max-height: 80vh !important;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.9) !important;
   }
 }
 </style>
