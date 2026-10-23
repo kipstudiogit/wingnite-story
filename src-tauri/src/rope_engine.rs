@@ -132,6 +132,7 @@ pub async fn rope_flush_to_storage(
     db_state: State<'_, EnterpriseDbPool>,
     rope_state: State<'_, RopeStateManager>,
     story_id: String,
+    project_id: String,
     title: String,
     category: String,
     operator: String,
@@ -146,6 +147,7 @@ pub async fn rope_flush_to_storage(
 
     let payload = SaveStoryPayload {
         id: story_id,
+        project_id,
         title,
         content,
         category,

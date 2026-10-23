@@ -65,14 +65,24 @@ jobs:
       - name: Verify TypeScript Compilation
         run: npm run build
 
-      - name: Compile and Bundle Tauri Application
+      - name: Compile and Bundle Tauri Application with Updater Signatures
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Wingnite Story ${{ github.ref_name }}'
-          releaseBody: 'Автоматический мультиплатформенный релиз Wingnite Story Enterprise.'
+          releaseBody: |
+            ## Wingnite Story Enterprise — Релиз ${{ github.ref_name }}
+            
+            ### Основные изменения:
+            * **Система автообновлений**: Встроенный модуль проверки и фоновой установки обновлений (`tauri-plugin-updater`).
+            * **Мульти-произведения**: Полноценная изоляция сцен, хронологии и кодекса по книгам без смешивания контекстов.
+            * **Пакетный формат .wstory**: Атомарный экспорт и импорт книг с криптографической верификацией целостности SHA-256.
+            * **Расширенная типографика Markdown**: Поддержка блоков замечаний (`[!NOTE]`, `[!WARNING]`, `[!TIP]`, `[!DANGER]`), маркеров `==текст==`, спойлеров `||текст||`, чек-листов и русской диалоговой пунктуации.
+            * **Оптимизация интерфейса**: Единая панель сохранения с защитой от дублирующих коммитов.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri_args }}

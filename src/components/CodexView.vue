@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { marked } from "marked";
+import { renderMarkdown } from "../utils/markdown";
 import type { StoryItem } from "../types";
 
 const { stories } = defineProps<{
@@ -70,7 +70,7 @@ const categorizedCodex = computed<CodexDossierItem[]>(() => {
       icon: getEntityIcon(item.category),
       isDivine: item.category.includes("Артефакт") || item.category.includes("Демиург"),
       resonance: calculateResonance(item.id, item.content),
-      previewHtml: marked.parse(item.content.slice(0, 160)) as string,
+      previewHtml: renderMarkdown(item.content.slice(0, 180)),
     });
   }
   return result;
@@ -94,7 +94,7 @@ function handleMouseLeave(id: string) {
     <header class="codex-quantum-header">
       <div class="header-branding">
         <h2>Реестр Сущностей и Реликвий</h2>
-        <p>Архивная голографическая база мироздания</p>
+        <p>Архивная база персонажей, артефактов и лора текущего произведения</p>
       </div>
 
       <div class="codex-action-cluster">
@@ -474,7 +474,7 @@ function handleMouseLeave(id: string) {
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.6;
-  max-height: 72px;
+  max-height: 80px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;

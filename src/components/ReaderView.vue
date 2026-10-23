@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { marked } from "marked";
+import { renderMarkdown } from "../utils/markdown";
 
 const { title, category, content, fontSize, hasPrev, hasNext } = defineProps<{
   title: string;
@@ -17,7 +17,7 @@ const emit = defineEmits<{
   (e: "edit"): void;
 }>();
 
-const renderedMarkdown = computed(() => marked.parse(content) as string);
+const renderedHtml = computed(() => renderMarkdown(content));
 </script>
 
 <template>
@@ -40,7 +40,7 @@ const renderedMarkdown = computed(() => marked.parse(content) as string);
         </div>
       </header>
 
-      <div class="sheet-prose markdown-rendered" v-html="renderedMarkdown"></div>
+      <div class="sheet-prose markdown-rendered" v-html="renderedHtml"></div>
 
       <footer class="sheet-end-mark">
         <div class="end-symbol-cluster">

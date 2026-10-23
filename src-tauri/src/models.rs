@@ -2,8 +2,27 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectItem {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveProjectPayload {
+    pub id: Option<String>,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnterpriseStoryItem {
     pub id: String,
+    pub project_id: String,
     pub title: String,
     pub content: String,
     pub category: String,
@@ -16,6 +35,7 @@ pub struct EnterpriseStoryItem {
 #[serde(rename_all = "camelCase")]
 pub struct SaveStoryPayload {
     pub id: String,
+    pub project_id: String,
     pub title: String,
     pub content: String,
     pub category: String,
@@ -123,4 +143,28 @@ pub struct VaultVerificationResult {
     pub calculated_root: String,
     pub recorded_root: String,
     pub verified_nodes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatusPayload {
+    pub available: bool,
+    pub current_version: String,
+    pub version: Option<String>,
+    pub date: Option<String>,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WstoryPackage {
+    pub format: String,
+    pub format_version: String,
+    pub exported_at: i64,
+    pub generator: String,
+    pub project: ProjectItem,
+    pub stories: Vec<EnterpriseStoryItem>,
+    pub timeline_events: Vec<TimelineEventItem>,
+    pub entity_relations: Vec<EntityRelationItem>,
+    pub checksum: String,
 }

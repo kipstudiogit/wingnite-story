@@ -1,6 +1,6 @@
 [package]
 name = "wingnite-story"
-version = "1.0.0"
+version = "1.2.0"
 description = "Wingnite Story Enterprise Production Vault Core"
 authors = ["K. I. P. Studio"]
 edition = "2021"
@@ -10,19 +10,22 @@ name = "wingnite_story_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.7.3", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.4", features = [] }
+tauri = { version = "2.12.5", features = [] }
 tauri-plugin-opener = "2.7.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 rusqlite = { version = "0.40.2", features = ["bundled-full"] }
-uuid = { version = "1.28.0", features = ["v4"] }
+uuid = { version = "1.29.0", features = ["v4"] }
 chrono = "0.4.45"
 rand = "0.10.3"
 thiserror = "2.0.21"
-parking_lot = "0.12.5"
+parking_lot = "0.13.0"
 sha2 = "0.11.1"
 hex = "0.4.3"
 ropey = "1.6.1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"

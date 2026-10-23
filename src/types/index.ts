@@ -1,5 +1,20 @@
+export interface ProjectItem {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SaveProjectPayload {
+  id?: string;
+  title: string;
+  description: string;
+}
+
 export interface EnterpriseStoryItem {
   id: string;
+  projectId: string;
   title: string;
   content: string;
   category: string;
@@ -12,6 +27,7 @@ export type StoryItem = EnterpriseStoryItem;
 
 export interface SaveStoryPayload {
   id: string;
+  projectId: string;
   title: string;
   content: string;
   category: string;
@@ -191,6 +207,26 @@ export interface VaultVerificationResult {
   calculatedRoot: string;
   recordedRoot: string;
   verifiedNodes: number;
+}
+
+export interface UpdateStatusPayload {
+  available: boolean;
+  currentVersion: string;
+  version?: string;
+  date?: string;
+  body?: string;
+}
+
+export interface WstoryPackage {
+  format: string;
+  formatVersion: string;
+  exportedAt: number;
+  generator: string;
+  project: ProjectItem;
+  stories: EnterpriseStoryItem[];
+  timelineEvents: TimelineEventItem[];
+  entityRelations: EntityRelationItem[];
+  checksum: string;
 }
 
 export type AppTab = "reader" | "studio" | "board" | "codex" | "graph" | "timeline";

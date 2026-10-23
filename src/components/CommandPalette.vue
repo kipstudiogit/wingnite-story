@@ -46,6 +46,7 @@ const displayItems = computed(() => {
         snippet: res.snippet,
         story: match ?? {
           id: res.id,
+          projectId: "default_project",
           title: res.title,
           category: res.category,
           content: "",

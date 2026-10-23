@@ -48,7 +48,7 @@ export function useStories() {
 
   async function loadStories() {
     try {
-      const list = await invoke<EnterpriseStoryItem[]>("fetch_stories");
+      const list = await invoke<EnterpriseStoryItem[]>("fetch_stories", { projectId: null });
       stories.value = list;
       if (list.length > 0 && !activeId.value) {
         selectStory(list[0]);
@@ -82,6 +82,7 @@ export function useStories() {
     try {
       const payload: EnterpriseStoryItem = {
         id: activeId.value,
+        projectId: activeStory.value?.projectId ?? "default_project",
         title: currentTitle.value,
         content: currentContent.value,
         category: currentCategory.value,
@@ -166,7 +167,7 @@ export function useStories() {
 
   async function exportFullManuscript() {
     try {
-      const manuscript = await invoke<string>("export_manuscript");
+      const manuscript = await invoke<string>("export_manuscript", { projectId: null });
       const blob = new Blob([manuscript], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

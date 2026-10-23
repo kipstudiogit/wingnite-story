@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
-import { marked } from "marked";
 import { invoke } from "@tauri-apps/api/core";
 import type { StudioViewMode, TextMetricsResult } from "../types";
+import { renderMarkdown } from "../utils/markdown";
 import { useNarrativeLsp } from "../composables/useNarrativeLsp";
 import { useLoreGuardian } from "../composables/useLoreGuardian";
 import { useEnterpriseVault } from "../composables/useEnterpriseVault";
@@ -23,14 +23,12 @@ const {
   hasActive,
   operator = "Lead-Editor",
   storyId = "",
-  isSyncing = false,
 } = defineProps<{
   studioMode: StudioViewMode;
   fontSize: number;
   hasActive: boolean;
   operator?: string;
   storyId?: string;
-  isSyncing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -78,8 +76,7 @@ const showLore = ref(false);
 const showVault = ref(false);
 const mobileActiveTab = ref<"editor" | "preview">("editor");
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
-const renderedMarkdown = ref(marked.parse(content.value) as string);
-const saveSuccessFeedback = ref(false);
+const renderedHtml = ref(renderMarkdown(content.value));
 
 const metrics = ref<TextMetricsResult>({
   wordCount: 0,
@@ -98,8 +95,8 @@ let hoverTimer: number | null = null;
 watch(content, (newText) => {
   if (parseDebounce) clearTimeout(parseDebounce);
   parseDebounce = window.setTimeout(() => {
-    renderedMarkdown.value = marked.parse(newText) as string;
-  }, 60);
+    renderedHtml.value = renderMarkdown(newText);
+  }, 40);
 
   if (metricsDebounce) clearTimeout(metricsDebounce);
   metricsDebounce = window.setTimeout(async () => {
@@ -111,22 +108,10 @@ watch(content, (newText) => {
       metrics.value.wordCount = newText.trim() ? newText.trim().split(/\s+/).length : 0;
       metrics.value.charCount = newText.length;
     }
-  }, 200);
+  }, 180);
 
   triggerLoreAuditDebounced(newText);
 });
-
-watch(
-  () => isSyncing,
-  (loading, prev) => {
-    if (prev && !loading) {
-      saveSuccessFeedback.value = true;
-      setTimeout(() => {
-        saveSuccessFeedback.value = false;
-      }, 1500);
-    }
-  }
-);
 
 function handleTextareaInput(e: Event) {
   const target = e.target as HTMLTextAreaElement;
@@ -224,7 +209,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section :class="['enterprise-workbench-studio', `mode-${studioMode}`, `mobile-tab-${mobileActiveTab}`]">
+  <section :class="['enterprise-workbench-studio', `mode-${studioMode}`]">
     <div class="mobile-dual-nav">
       <button
         :class="['dual-tab-pill', { active: mobileActiveTab === 'editor' }]"
@@ -283,23 +268,6 @@ onMounted(() => {
             <span>LOR</span>
             <b>{{ Math.round(consistencyScore) }}%</b>
           </div>
-
-          <button
-            class="btn-plasma-save desktop-only-btn"
-            :class="{ saving: isSyncing, success: saveSuccessFeedback }"
-            :disabled="isSyncing"
-            title="Сохранить коммит"
-            @click="emit('save')"
-          >
-            <svg class="ui-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/>
-              <polyline points="7 3 7 8 15 8"/>
-            </svg>
-            <span v-if="saveSuccessFeedback">Сохранено ✓</span>
-            <span v-else-if="isSyncing">Синхронизация...</span>
-            <span v-else>Коммит</span>
-          </button>
 
           <button
             class="tactile-icon-btn"
@@ -372,14 +340,23 @@ onMounted(() => {
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n### ', '\n', 'Заголовок 3')">
             <span class="tool-label-text">H3</span>
           </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n#### ', '\n', 'Заголовок 4')">
+            <span class="tool-label-text">H4</span>
+          </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('**', '**', 'жирный текст')">
-            <span class="tool-label-text">B</span>
+            <span class="tool-label-text"><b>B</b></span>
           </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('*', '*', 'курсивный текст')">
-            <span class="tool-label-text">I</span>
+            <span class="tool-label-text"><i>I</i></span>
           </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('~~', '~~', 'зачеркнутый текст')">
-            <span class="tool-label-text">S</span>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('~~', '~~', 'зачеркнутый')">
+            <span class="tool-label-text"><s>S</s></span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('==', '==', 'выделение')">
+            <span class="tool-label-text"><mark class="chip-mark">Mark</mark></span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('||', '||', 'секретный текст')">
+            <span class="tool-label-text">Спойлер</span>
           </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[[', ']]', 'Сущность')">
             <span class="tool-label-text">[[Wiki]]</span>
@@ -388,7 +365,16 @@ onMounted(() => {
             <span class="tool-label-text">@Персонаж</span>
           </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> «', '»\n', 'Прямая речь')">
-            <span class="tool-label-text">Цитата</span>
+            <span class="tool-label-text">«Прямая речь»</span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> [!NOTE]\n> ', '\n', 'Важная сюжетная заметка')">
+            <span class="tool-label-text">Заметка [!]</span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> [!WARNING]\n> ', '\n', 'Предупреждение о каноне')">
+            <span class="tool-label-text">Внимание [!]</span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- [ ] ', '\n', 'Задача к сцене')">
+            <span class="tool-label-text">☑ Чеклист</span>
           </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- ', '\n', 'Элемент списка')">
             <span class="tool-label-text">• Список</span>
@@ -396,17 +382,23 @@ onMounted(() => {
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n1. ', '\n', 'Нумерованный пункт')">
             <span class="tool-label-text">1. Пункт</span>
           </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[', '](https://)', 'текст ссылки')">
+            <span class="tool-label-text">Ссылка</span>
+          </button>
           <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('`', '`', 'код')">
             <span class="tool-label-text">&lt;/&gt;</span>
           </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n```\n', '\n```\n', 'код блока')">
-            <span class="tool-label-text">Блок кода</span>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n```\n', '\n```\n', 'блок кода')">
+            <span class="tool-label-text">Код-блок</span>
           </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n| Параметр | Значение |\n|---|---|\n| Свойство | Данные |\n', '', '')">
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n| Параметр | Значение |\n|---|---|\n| Реликвия | Астральная Сталь |\n', '', '')">
             <span class="tool-label-text">Таблица</span>
           </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n\n---\n\n', '', '')">
-            <span class="tool-label-text">Разделитель</span>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n\n***\n\n', '', '')">
+            <span class="tool-label-text">Астеризм ***</span>
+          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n<details>\n<summary>Тайные хроники</summary>\n\n', '\n</details>\n', 'Скрытые факты...')">
+            <span class="tool-label-text">Детали</span>
           </button>
         </div>
       </div>
@@ -491,7 +483,7 @@ onMounted(() => {
       <div
         class="preview-parchment-sheet markdown-rendered"
         :style="{ fontSize: `${fontSize}px` }"
-        v-html="renderedMarkdown"
+        v-html="renderedHtml"
       ></div>
     </div>
   </section>
@@ -703,30 +695,6 @@ onMounted(() => {
   color: var(--accent-rose);
 }
 
-.btn-plasma-save {
-  background: linear-gradient(135deg, var(--accent-indigo) 0%, #4338ca 100%);
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  padding: 0 18px;
-  height: 42px;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-}
-
-.btn-plasma-save.saving {
-  opacity: 0.7;
-}
-
-.btn-plasma-save.success {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-}
-
 .tactile-icon-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -787,11 +755,14 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  padding: 0 12px;
+  padding: 0 10px;
   height: 32px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tool-chip-btn:hover {
@@ -802,6 +773,13 @@ onMounted(() => {
 .tool-label-text {
   font-size: 11px;
   font-weight: 800;
+}
+
+.chip-mark {
+  background: rgba(245, 158, 11, 0.25);
+  color: var(--accent-gold);
+  padding: 0 3px;
+  border-radius: 3px;
 }
 
 .editor-viewport-well {
@@ -908,10 +886,6 @@ onMounted(() => {
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-  }
-
-  .desktop-only-btn {
-    display: none !important;
   }
 
   .quantum-tools-strip {

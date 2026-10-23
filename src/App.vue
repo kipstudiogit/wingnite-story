@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEnterpriseStory } from "./composables/useEnterpriseStory";
 import { useSprint } from "./composables/useSprint";
 import { useDevice } from "./composables/useDevice";
+import { useAppUpdater } from "./composables/useAppUpdater";
 import type { AppTab, StudioViewMode, ThemeMode, EnterpriseStoryItem } from "./types";
 
 import SplashScreen from "./components/SplashScreen.vue";
@@ -21,6 +22,8 @@ import MobileKeyboardBar from "./components/mobile/MobileKeyboardBar.vue";
 import MobileDrawerSheet from "./components/mobile/MobileDrawerSheet.vue";
 
 const {
+  projects,
+  activeProjectId,
   stories,
   activeId,
   currentTitle,
@@ -32,10 +35,16 @@ const {
   syncError,
   currentWords,
   totalSystemWords,
+  loadSystemProjects,
+  createProject,
+  deleteActiveProject,
+  switchProject,
   loadSystemStories,
   selectEnterpriseStory,
   persistStoryMutation,
   deleteSystemStory,
+  exportProjectWstory,
+  importProjectWstory,
   initializeBlankDraft,
   createEntityDraft,
 } = useEnterpriseStory();
@@ -49,6 +58,16 @@ const {
 } = useSprint(() => currentWords.value);
 
 const { isMobile, isKeyboardOpen } = useDevice();
+const {
+  isChecking: isCheckingUpdate,
+  isInstalling: isInstallingUpdate,
+  updateAvailable,
+  updateInfo,
+  updateError,
+  checkForUpdates,
+  installAndRestart,
+  dismissUpdate,
+} = useAppUpdater();
 
 const isBackendLoaded = ref(false);
 const showSplash = ref(true);
@@ -63,6 +82,11 @@ const tocOpen = ref<boolean>(false);
 const paletteOpen = ref<boolean>(false);
 const mobileMenuOpen = ref<boolean>(false);
 const exportNotification = ref<string | null>(null);
+
+const showProjectModal = ref(false);
+const newProjectTitle = ref("");
+const newProjectDesc = ref("");
+const wstoryFileInputRef = ref<HTMLInputElement | null>(null);
 
 const showMobileDock = computed(() => isMobile.value && !isKeyboardOpen.value);
 
@@ -88,8 +112,10 @@ const hasNextChapter = computed(() =>
 );
 
 async function initApplicationData() {
-  await loadSystemStories();
+  await loadSystemProjects();
+  await loadSystemStories(activeProjectId.value);
   isBackendLoaded.value = true;
+  checkForUpdates(true);
 }
 
 async function handleSave() {
@@ -101,6 +127,97 @@ async function handleSave() {
     }, 2500);
   } else if (syncError.value) {
     exportNotification.value = `Ошибка сохранения: ${syncError.value}`;
+  }
+}
+
+async function handleCreateProjectSubmit() {
+  if (!newProjectTitle.value.trim()) return;
+  await createProject(newProjectTitle.value, newProjectDesc.value);
+  newProjectTitle.value = "";
+  newProjectDesc.value = "";
+  showProjectModal.value = false;
+  exportNotification.value = "Новое произведение создано и активировано";
+  setTimeout(() => {
+    exportNotification.value = null;
+  }, 2500);
+}
+
+async function handleDeleteProject(id: string) {
+  const confirmed = confirm("Вы действительно хотите удалить это произведение и все его сцены?");
+  if (!confirmed) return;
+
+  const success = await deleteActiveProject(id);
+  if (success) {
+    exportNotification.value = "Произведение удалено";
+    setTimeout(() => {
+      exportNotification.value = null;
+    }, 2500);
+  }
+}
+
+async function handleExportWstory() {
+  try {
+    const raw = await exportProjectWstory(activeProjectId.value);
+    const activeP = projects.value.find((p) => p.id === activeProjectId.value);
+    const cleanTitle = (activeP?.title || "Project").replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]/g, "_");
+    const filename = `${cleanTitle}.wstory`;
+
+    try {
+      const savedPath = await invoke<string>("save_export_file", {
+        filename,
+        content: raw,
+      });
+      exportNotification.value = `Пакет .wstory сохранен: ${savedPath}`;
+    } catch {
+      const blob = new Blob([raw], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      exportNotification.value = `Пакет ${filename} скачан`;
+    }
+  } catch (err) {
+    exportNotification.value = `Ошибка экспорта: ${String(err)}`;
+  }
+  setTimeout(() => {
+    exportNotification.value = null;
+  }, 4000);
+}
+
+function triggerImportWstoryDialog() {
+  wstoryFileInputRef.value?.click();
+}
+
+async function handleWstoryFileChange(e: Event) {
+  const target = e.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const imported = await importProjectWstory(text);
+    exportNotification.value = `Произведение "${imported.title}" успешно импортировано!`;
+  } catch (err) {
+    exportNotification.value = `Ошибка импорта .wstory: ${String(err)}`;
+  } finally {
+    target.value = "";
+  }
+  setTimeout(() => {
+    exportNotification.value = null;
+  }, 4000);
+}
+
+async function handleManualCheckUpdate() {
+  const found = await checkForUpdates(false);
+  if (!found) {
+    exportNotification.value = updateError.value
+      ? `Статус обновления: ${updateError.value}`
+      : "У вас установлена актуальная версия Wingnite Story 1.2.0 ✓";
+    setTimeout(() => {
+      exportNotification.value = null;
+    }, 3000);
   }
 }
 
@@ -148,7 +265,9 @@ function handleMobileInsert(prefix: string, suffix: string, placeholder = "") {
 
 async function exportStandaloneBook() {
   try {
-    const htmlBook = await invoke<string>("compile_book_edition");
+    const htmlBook = await invoke<string>("compile_book_edition", {
+      projectId: activeProjectId.value,
+    });
     try {
       const savedPath = await invoke<string>("save_export_file", {
         filename: "Wingnite_Enterprise_Book.html",
@@ -175,7 +294,9 @@ async function exportStandaloneBook() {
 
 async function exportFullManuscript() {
   try {
-    const manuscript = await invoke<string>("export_manuscript");
+    const manuscript = await invoke<string>("export_manuscript", {
+      projectId: activeProjectId.value,
+    });
     try {
       const savedPath = await invoke<string>("save_export_file", {
         filename: "Wingnite_Enterprise_Manuscript.md",
@@ -262,6 +383,7 @@ function handleKeydown(e: KeyboardEvent) {
     paletteOpen.value = false;
     tocOpen.value = false;
     mobileMenuOpen.value = false;
+    showProjectModal.value = false;
   }
 }
 
@@ -280,6 +402,14 @@ onUnmounted(() => {
   <div :class="['studio-app-shell', `theme-${currentTheme}`, { 'mobile-platform': isMobile, 'keyboard-active': isKeyboardOpen }]">
     <div class="cyber-grid-overlay"></div>
 
+    <input
+      ref="wstoryFileInputRef"
+      type="file"
+      accept=".wstory,.json"
+      style="display: none"
+      @change="handleWstoryFileChange"
+    />
+
     <transition name="splash-dissolve">
       <SplashScreen
         v-if="showSplash"
@@ -291,6 +421,26 @@ onUnmounted(() => {
     <div v-if="exportNotification" class="export-toast-banner" :class="{ error: exportNotification.startsWith('Ошибка') }">
       <span>{{ exportNotification }}</span>
       <button class="toast-close" @click="exportNotification = null">✕</button>
+    </div>
+
+    <div v-if="updateAvailable && updateInfo" class="update-ribbon-card">
+      <div class="update-ribbon-left">
+        <span class="ribbon-sparkle">✦</span>
+        <div class="ribbon-text-col">
+          <span class="ribbon-title">Доступно обновление Wingnite Story {{ updateInfo.version }}</span>
+          <span class="ribbon-sub">{{ updateInfo.body || 'Новые функции, оптимизации и исправления' }}</span>
+        </div>
+      </div>
+      <div class="update-ribbon-right">
+        <button
+          class="btn-ribbon-install"
+          :disabled="isInstallingUpdate"
+          @click="installAndRestart"
+        >
+          {{ isInstallingUpdate ? 'Установка...' : 'Обновить и перезапустить' }}
+        </button>
+        <button class="btn-ribbon-close" @click="dismissUpdate">✕</button>
+      </div>
     </div>
 
     <CommandPalette
@@ -348,6 +498,12 @@ onUnmounted(() => {
         >
           <span>+ Новый драфт</span>
         </button>
+        <button class="btn-drawer-action" @click="handleExportWstory">
+          <span>Экспорт .wstory</span>
+        </button>
+        <button class="btn-drawer-action" @click="triggerImportWstoryDialog">
+          <span>Импорт .wstory</span>
+        </button>
         <button class="btn-drawer-action" @click="exportStandaloneBook">
           <span>Собрать издание (HTML)</span>
         </button>
@@ -392,10 +548,19 @@ onUnmounted(() => {
       :sprint-formatted-time="sprintFormattedTime"
       :sprint-delta="sprintDelta"
       :is-syncing="isSyncing"
+      :projects="projects"
+      :active-project-id="activeProjectId"
+      :update-available="updateAvailable"
       @toggle-toc="tocOpen = !tocOpen"
       @open-palette="paletteOpen = true"
       @toggle-sprint="toggleSprint"
       @save="handleSave"
+      @select-project="switchProject"
+      @create-project="showProjectModal = true"
+      @delete-project="handleDeleteProject"
+      @export-wstory="handleExportWstory"
+      @import-wstory="triggerImportWstoryDialog"
+      @check-update="handleManualCheckUpdate"
     />
 
     <div v-if="!isMobile" class="workbench-subtoolbar">
@@ -469,6 +634,9 @@ onUnmounted(() => {
         </div>
 
         <div class="subtool-right-actions">
+          <button class="btn-quick-export" title="Экспорт пакета .wstory" @click="handleExportWstory">
+            .WSTORY
+          </button>
           <button class="btn-quick-export" title="Экспорт издания в HTML" @click="exportStandaloneBook">
             HTML
           </button>
@@ -477,14 +645,6 @@ onUnmounted(() => {
           </button>
           <button class="btn-generator-spark" @click="getTwist">
             <span>Твист</span>
-          </button>
-          <button
-            class="btn-quick-save"
-            :disabled="isSyncing"
-            title="Сохранить изменения (⌘S)"
-            @click="handleSave"
-          >
-            {{ isSyncing ? '...' : 'Сохранить' }}
           </button>
         </div>
       </div>
@@ -524,7 +684,6 @@ onUnmounted(() => {
         :has-active="!!activeId"
         :operator="activeOperator"
         :story-id="activeId"
-        :is-syncing="isSyncing"
         @save="handleSave"
         @delete="handleDeleteActiveStory"
         @select-story-by-id="handleSelectStoryById"
@@ -580,7 +739,7 @@ onUnmounted(() => {
     <footer v-if="!isMobile" class="system-statusbar">
       <div class="status-left">
         <span class="status-indicator" :class="{ syncing: isSyncing }"></span>
-        <span>SQLite WAL Pool</span>
+        <span>SQLite WAL</span>
         <span class="status-divider">/</span>
         <span>Слов: <b>{{ currentWords }}</b></span>
         <span class="status-divider">/</span>
@@ -589,9 +748,33 @@ onUnmounted(() => {
         <span>Ревизия: <b>r{{ currentRevision }}</b></span>
       </div>
       <div class="status-right">
-        <span>{{ syncError || (isSyncing ? 'Синхронизация коммита...' : 'Система верифицирована') }}</span>
+        <span>Wingnite v1.2.0 • {{ syncError || (isSyncing ? 'Синхронизация...' : 'Ядро верифицировано') }}</span>
       </div>
     </footer>
+
+    <div v-if="showProjectModal" class="modal-backdrop" @click.self="showProjectModal = false">
+      <div class="modal-window">
+        <h3>Новое литературное произведение</h3>
+        <p class="modal-subtext">Создание изолированного пространства для глав, сцен, канбана и реестра канона.</p>
+        <div class="form-inputs">
+          <input
+            v-model="newProjectTitle"
+            class="modal-input"
+            placeholder="Название книги или саги..."
+            autofocus
+          />
+          <textarea
+            v-model="newProjectDesc"
+            class="modal-textarea"
+            placeholder="Краткое описание сеттинга, синопсис или логлайн..."
+          ></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-modal-cancel" @click="showProjectModal = false">Отмена</button>
+          <button class="btn-modal-submit" @click="handleCreateProjectSubmit">Создать произведение</button>
+        </div>
+      </div>
+    </div>
 
     <MobileDrawerSheet
       :is-open="isMobile && tocOpen"
@@ -637,6 +820,40 @@ onUnmounted(() => {
       @close="mobileMenuOpen = false"
     >
       <div class="mobile-menu-grid">
+        <div class="menu-action-block">
+          <h4>Произведение</h4>
+          <div class="menu-btn-row">
+            <button
+              v-for="p in projects"
+              :key="p.id"
+              :class="['menu-chip-btn', { active: p.id === activeProjectId }]"
+              @click="switchProject(p.id); mobileMenuOpen = false"
+            >
+              {{ p.title }}
+            </button>
+            <button class="menu-chip-btn accent" @click="showProjectModal = true; mobileMenuOpen = false">
+              + Новая книга
+            </button>
+          </div>
+        </div>
+
+        <div class="menu-action-block">
+          <h4>Пакет .wstory</h4>
+          <div class="menu-btn-row">
+            <button class="menu-chip-btn" @click="handleExportWstory(); mobileMenuOpen = false">Экспорт .wstory</button>
+            <button class="menu-chip-btn" @click="triggerImportWstoryDialog(); mobileMenuOpen = false">Импорт .wstory</button>
+          </div>
+        </div>
+
+        <div class="menu-action-block">
+          <h4>Обновление</h4>
+          <div class="menu-btn-row">
+            <button class="menu-chip-btn" @click="handleManualCheckUpdate(); mobileMenuOpen = false">
+              {{ isCheckingUpdate ? 'Проверка...' : 'Проверить обновление (v1.2.0)' }}
+            </button>
+          </div>
+        </div>
+
         <div class="menu-action-block">
           <h4>Навигация модулей</h4>
           <div class="menu-btn-row">
@@ -725,6 +942,77 @@ onUnmounted(() => {
   color: #fff;
   cursor: pointer;
   font-size: 14px;
+}
+
+.update-ribbon-card {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.95) 0%, rgba(6, 182, 212, 0.95) 100%);
+  color: #fff;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  z-index: 80;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.update-ribbon-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ribbon-sparkle {
+  color: #fef08a;
+  font-size: 16px;
+}
+
+.ribbon-text-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.ribbon-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.ribbon-sub {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.update-ribbon-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-ribbon-install {
+  background: #ffffff;
+  color: var(--accent-indigo);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.btn-ribbon-install:hover {
+  transform: scale(1.03);
+}
+
+.btn-ribbon-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
 }
 
 .mobile-master-header {
@@ -938,7 +1226,7 @@ onUnmounted(() => {
 
 .btn-drawer-action {
   width: 100%;
-  height: 40px;
+  height: 38px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -1082,21 +1370,6 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.btn-quick-save {
-  background: var(--accent-indigo);
-  border: none;
-  color: #fff;
-  border-radius: 8px;
-  padding: 4px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.btn-quick-save:disabled {
-  opacity: 0.6;
 }
 
 .twist-banner {
@@ -1291,6 +1564,18 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.menu-chip-btn.active {
+  background: var(--accent-indigo);
+  color: #fff;
+  border-color: var(--accent-indigo);
+}
+
+.menu-chip-btn.accent {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
 .theme-chip-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1318,5 +1603,89 @@ onUnmounted(() => {
   font-weight: 700;
   cursor: pointer;
   text-align: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(14px);
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-window {
+  width: 90%;
+  max-width: 480px;
+  background: var(--bg-surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+}
+
+.modal-window h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-pure);
+}
+
+.modal-subtext {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.form-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal-input,
+.modal-textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-pure);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  outline: none;
+}
+
+.modal-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.btn-modal-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn-modal-submit {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
 }
 </style>

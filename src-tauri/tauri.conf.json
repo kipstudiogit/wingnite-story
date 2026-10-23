@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
   "productName": "Wingnite Story",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "identifier": "com.kipstudio.wingnitestory",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -23,11 +23,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: asset: https:; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: asset: https:; connect-src ipc: http://ipc.localhost https://github.com https://objects.githubusercontent.com"
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -45,6 +46,14 @@
     },
     "windows": {
       "digestAlgorithm": "sha256"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3RjAxMzJFQzA2QjM5RTAKUldRRWRvZXp4aTR2KzJtMWhVOG13eXRvaDRUVDdZdzBLVk81V2ZlT0p6a2d1Z2JNYzNlVnVyK1EK",
+      "endpoints": [
+        "https://github.com/kipstudio/wingnite-story/releases/latest/download/latest.json"
+      ]
     }
   }
 }

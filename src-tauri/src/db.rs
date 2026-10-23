@@ -32,14 +32,24 @@ pub fn init_database(app: &AppHandle) -> Result<EnterpriseDbPool, AppError> {
          PRAGMA foreign_keys = ON;
          PRAGMA busy_timeout = 8000;
 
+         CREATE TABLE IF NOT EXISTS projects (
+             id TEXT PRIMARY KEY,
+             title TEXT NOT NULL,
+             description TEXT NOT NULL,
+             created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL
+         );
+
          CREATE TABLE IF NOT EXISTS stories (
              id TEXT PRIMARY KEY,
+             project_id TEXT NOT NULL DEFAULT 'default_project',
              title TEXT NOT NULL,
              content TEXT NOT NULL,
              category TEXT NOT NULL,
              revision INTEGER NOT NULL DEFAULT 1,
              content_hash TEXT NOT NULL,
-             updated_at INTEGER NOT NULL
+             updated_at INTEGER NOT NULL,
+             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
          );
 
          CREATE TABLE IF NOT EXISTS audit_ledger (
@@ -86,8 +96,31 @@ pub fn init_database(app: &AppHandle) -> Result<EnterpriseDbPool, AppError> {
              sealed_at INTEGER NOT NULL,
              operator TEXT NOT NULL,
              signature TEXT NOT NULL
-         );
+         );",
+    )?;
 
+    let mut has_project_column = false;
+    {
+        let mut pragma_stmt = writer_conn.prepare("PRAGMA table_info(stories)")?;
+        let mut pragma_rows = pragma_stmt.query([])?;
+        while let Some(row) = pragma_rows.next()? {
+            let col_name: String = row.get(1)?;
+            if col_name == "project_id" {
+                has_project_column = true;
+                break;
+            }
+        }
+    }
+
+    if !has_project_column {
+        writer_conn.execute(
+            "ALTER TABLE stories ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default_project'",
+            [],
+        )?;
+    }
+
+    writer_conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_stories_project ON stories(project_id);
          CREATE INDEX IF NOT EXISTS idx_stories_revision ON stories(id, revision);
          CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_ledger(entity_id);
          CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_ledger(timestamp DESC);
@@ -119,30 +152,42 @@ pub fn init_database(app: &AppHandle) -> Result<EnterpriseDbPool, AppError> {
          END;",
     )?;
 
+    let now = chrono::Utc::now().timestamp();
+
+    writer_conn.execute(
+        "INSERT OR IGNORE INTO projects (id, title, description, created_at, updated_at) 
+         VALUES ('default_project', 'Тени Цитадели', 'Основная хроника ордена Золотого Веретена', ?1, ?1)",
+        rusqlite::params![now],
+    )?;
+
+    let _ = writer_conn.execute(
+        "UPDATE stories SET project_id = 'default_project' WHERE project_id IS NULL OR project_id = ''",
+        [],
+    );
+
     let count: i64 = writer_conn
         .query_row("SELECT COUNT(*) FROM stories", [], |r| r.get(0))
         .unwrap_or(0);
 
     if count == 0 {
-        let now = chrono::Utc::now().timestamp();
         let genesis_id = uuid::Uuid::new_v4().to_string();
         let artifact_id = uuid::Uuid::new_v4().to_string();
         let entity_id = uuid::Uuid::new_v4().to_string();
 
-        let genesis_content = "# Глава 1: Тени Цитадели\n\nСеверный ветер трепал штандарты над каменными бастионами цитадели, когда караван беглецов перевалил через заснеженный перевал...\n\n---\n\n> «История никогда не начинается в тишине. Ей всегда предшествует раскат грома.»\n\nОн коснулся рукояти старинного клинка, чувствуя холод древней стали [[Око Бесконечности]]. В небе над цитаделью пробудился @Элион.";
-        let artifact_content = "### Реликвия Высшего Порядка\n* **Класс:** Первородный Артефакт\n* **Владелец:** Павший Демиург Самаэль\n* **Истинное свойство:** Позволяет созерцать параллельные временные ветви ценой увядания воспоминаний\n* **Печать ограничения:** Не может быть активирован смертным без жертвы кровью рода\n* **История обретения:** Извлечен со дна Бездны на исходе Второй Эпохи...";
+        let genesis_content = "# Глава 1: Тени Цитадели\n\nСеверный ветер трепал штандарты над каменными бастионами цитадели, когда караван беглецов перевалил через заснеженный перевал...\n\n---\n\n> «История никогда не начинается в тишине. Ей всегда предшествует раскат грома.»\n\nОн коснулся рукояти старинного клинка, чувствуя холод древней стали [[Око Бесконечности]]. В небе над цитаделью пробудился @Элион.\n\n> [!NOTE]\n> Энергетический щит цитадели активен до захода второго солнца.\n\n- [x] Разбить передовой лагерь\n- [ ] Провести разведку руин\n\nЛегенды гласят, что артефакт ==неуязвим для магии смертных==, а его истинный создатель скрыт за печатью тайны.";
+        let artifact_content = "### Реликвия Высшего Порядка\n* **Класс:** Первородный Артефакт\n* **Владелец:** Павший Демиург Самаэль\n* **Истинное свойство:** Позволяет созерцать параллельные временные ветви ценой увядания воспоминаний\n* **Печать ограничения:** Не может быть активирован смертным без жертвы кровью рода\n* **История обретения:** Извлечен со дна Бездны на исходе Второй Эпохи...\n\n> [!WARNING]\n> Прямой контакт с матрицей вызывает необратимый хроно-сдвиг!";
         let demiurge_content = "### Досье Божественной Сущности\n* **Истинный ранг:** Архитектор Времени\n* **Культ почитания:** Орден Золотого Веретена\n* **Облик:** Аморфное созвездие из вращающихся серебряных колец\n* **Уязвимость:** Искажение изначального ритма ткани мироздания\n* **Отношение к героям:** Бесстрастное наблюдение за фатальным выбором";
 
         let _ = writer_conn.execute(
-            "INSERT INTO stories (id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'Глава 1: Тени Цитадели', ?2, 'Акт I', 1, 'genesis_1', ?3)",
+            "INSERT INTO stories (id, project_id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'default_project', 'Глава 1: Тени Цитадели', ?2, 'Акт I', 1, 'genesis_1', ?3)",
             rusqlite::params![genesis_id, genesis_content, now],
         );
         let _ = writer_conn.execute(
-            "INSERT INTO stories (id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'Око Бесконечности', ?2, 'Божественный Артефакт', 1, 'genesis_2', ?3 + 1)",
+            "INSERT INTO stories (id, project_id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'default_project', 'Око Бесконечности', ?2, 'Божественный Артефакт', 1, 'genesis_2', ?3 + 1)",
             rusqlite::params![artifact_id, artifact_content, now],
         );
         let _ = writer_conn.execute(
-            "INSERT INTO stories (id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'Элион Хранитель', ?2, 'Демиург / Сущность', 1, 'genesis_3', ?3 + 2)",
+            "INSERT INTO stories (id, project_id, title, content, category, revision, content_hash, updated_at) VALUES (?1, 'default_project', 'Элион Хранитель', ?2, 'Демиург / Сущность', 1, 'genesis_3', ?3 + 2)",
             rusqlite::params![entity_id, demiurge_content, now],
         );
 

@@ -1,7 +1,16 @@
 import { ref, computed, shallowRef } from "vue";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import type { EnterpriseStoryItem, SaveStoryPayload, AuditLogEntry, FtsResultItem } from "../types";
+import type {
+  EnterpriseStoryItem,
+  SaveStoryPayload,
+  AuditLogEntry,
+  FtsResultItem,
+  ProjectItem,
+  SaveProjectPayload,
+} from "../types";
 
+const projects = ref<ProjectItem[]>([]);
+const activeProjectId = ref<string>("default_project");
 const stories = ref<EnterpriseStoryItem[]>([]);
 const auditLogs = shallowRef<AuditLogEntry[]>([]);
 const activeId = ref<string>("");
@@ -29,6 +38,10 @@ function calculateWords(text: string): number {
   return count;
 }
 
+const activeProject = computed(() =>
+  projects.value.find((p) => p.id === activeProjectId.value)
+);
+
 const activeStory = computed(() =>
   stories.value.find((s) => s.id === activeId.value)
 );
@@ -47,14 +60,79 @@ const totalSystemWords = computed(() => {
   return count;
 });
 
-async function loadSystemStories(): Promise<void> {
+async function loadSystemProjects(): Promise<void> {
+  try {
+    const list = await invoke<ProjectItem[]>("fetch_projects");
+    projects.value = list;
+    if (list.length > 0 && !projects.value.some((p) => p.id === activeProjectId.value)) {
+      activeProjectId.value = list[0].id;
+    }
+  } catch (err) {
+    syncError.value = String(err);
+  }
+}
+
+async function createProject(title: string, description: string): Promise<ProjectItem | null> {
   isSyncing.value = true;
   syncError.value = null;
   try {
-    const records = await invoke<EnterpriseStoryItem[]>("fetch_stories");
+    const payload: SaveProjectPayload = {
+      title: title.trim() || "Новое произведение",
+      description: description.trim() || "Архивная книга",
+    };
+    const saved = await invoke<ProjectItem>("mutate_project", { payload });
+    projects.value.unshift(saved);
+    await switchProject(saved.id);
+    return saved;
+  } catch (err) {
+    syncError.value = String(err);
+    return null;
+  } finally {
+    isSyncing.value = false;
+  }
+}
+
+async function deleteActiveProject(id: string): Promise<boolean> {
+  if (projects.value.length <= 1) {
+    syncError.value = "Нельзя удалить единственное оставшееся произведение.";
+    return false;
+  }
+
+  isSyncing.value = true;
+  syncError.value = null;
+  try {
+    await invoke("delete_project", { id });
+    projects.value = projects.value.filter((p) => p.id !== id);
+    const fallbackId = projects.value[0]?.id || "default_project";
+    await switchProject(fallbackId);
+    return true;
+  } catch (err) {
+    syncError.value = String(err);
+    return false;
+  } finally {
+    isSyncing.value = false;
+  }
+}
+
+async function switchProject(projectId: string): Promise<void> {
+  activeProjectId.value = projectId;
+  activeId.value = "";
+  await loadSystemStories(projectId);
+}
+
+async function loadSystemStories(targetProjectId?: string): Promise<void> {
+  isSyncing.value = true;
+  syncError.value = null;
+  const pid = targetProjectId || activeProjectId.value;
+  try {
+    const records = await invoke<EnterpriseStoryItem[]>("fetch_stories", {
+      projectId: pid,
+    });
     stories.value = records;
-    if (records.length > 0 && !activeId.value) {
+    if (records.length > 0) {
       selectEnterpriseStory(records[0]);
+    } else {
+      initializeBlankDraft();
     }
   } catch (err) {
     syncError.value = String(err);
@@ -78,6 +156,7 @@ async function persistStoryMutation(): Promise<boolean> {
 
   const payload: SaveStoryPayload = {
     id: activeId.value,
+    projectId: activeProjectId.value,
     title: currentTitle.value.trim() || "Сцена без названия",
     content: currentContent.value,
     category: currentCategory.value.trim() || "Акт I",
@@ -157,6 +236,20 @@ async function performIndexedSearch(query: string): Promise<FtsResultItem[]> {
   }
 }
 
+async function exportProjectWstory(projectId: string): Promise<string> {
+  return await invoke<string>("export_project_wstory", { projectId });
+}
+
+async function importProjectWstory(packageRaw: string): Promise<ProjectItem> {
+  const imported = await invoke<ProjectItem>("import_project_wstory", {
+    packageRaw,
+    operator: activeOperator.value,
+  });
+  await loadSystemProjects();
+  await switchProject(imported.id);
+  return imported;
+}
+
 function initializeBlankDraft(
   category = "Акт I",
   title = "Новая сцена",
@@ -199,6 +292,9 @@ function createEntityDraft(type: "artifact" | "pantheon" | "sanctuary" | "charac
 
 export function useEnterpriseStory() {
   return {
+    projects,
+    activeProjectId,
+    activeProject,
     stories,
     auditLogs,
     activeId,
@@ -212,12 +308,18 @@ export function useEnterpriseStory() {
     activeStory,
     currentWords,
     totalSystemWords,
+    loadSystemProjects,
+    createProject,
+    deleteActiveProject,
+    switchProject,
     loadSystemStories,
     selectEnterpriseStory,
     persistStoryMutation,
     deleteSystemStory,
     startAuditStream,
     performIndexedSearch,
+    exportProjectWstory,
+    importProjectWstory,
     initializeBlankDraft,
     createEntityDraft,
   };

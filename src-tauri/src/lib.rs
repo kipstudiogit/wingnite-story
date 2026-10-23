@@ -23,6 +23,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                let _ = app.handle().plugin(tauri_plugin_updater::Builder::new().build());
+            }
+
             let pool = db::init_database(app.handle())?;
             app.manage(pool);
 
@@ -40,6 +45,9 @@ pub fn run() {
             rope_engine::rope_get_viewport,
             rope_engine::rope_apply_delta,
             rope_engine::rope_flush_to_storage,
+            story_commands::fetch_projects,
+            story_commands::mutate_project,
+            story_commands::delete_project,
             story_commands::fetch_stories,
             story_commands::get_stories,
             story_commands::mutate_story,
@@ -52,6 +60,10 @@ pub fn run() {
             story_commands::generate_twist,
             story_commands::export_manuscript,
             story_commands::save_export_file,
+            story_commands::export_project_wstory,
+            story_commands::import_project_wstory,
+            story_commands::check_application_update,
+            story_commands::install_application_update,
             timeline_commands::fetch_timeline_events,
             timeline_commands::mutate_timeline_event,
             timeline_commands::delete_timeline_event,
