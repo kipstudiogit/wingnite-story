@@ -52,7 +52,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3RjAxMzJFQzA2QjM5RTAKUldRRWRvZXp4aTR2KzJtMWhVOG13eXRvaDRUVDdZdzBLVk81V2ZlT0p6a2d1Z2JNYzNlVnVyK1EK",
       "endpoints": [
-        "https://github.com/kipstudio/wingnite-story/releases/latest/download/latest.json"
+        "https://github.com/kipstudiogit/wingnite-story/releases/latest/download/latest.json"
       ]
     }
   }

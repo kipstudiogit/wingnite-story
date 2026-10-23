@@ -92,7 +92,7 @@ let parseDebounce: number | null = null;
 let metricsDebounce: number | null = null;
 let hoverTimer: number | null = null;
 
-watch(content, (newText) => {
+watch(content, (newText: string) => {
   if (parseDebounce) clearTimeout(parseDebounce);
   parseDebounce = window.setTimeout(() => {
     renderedHtml.value = renderMarkdown(newText);
