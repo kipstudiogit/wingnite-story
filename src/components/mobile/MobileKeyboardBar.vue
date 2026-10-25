@@ -10,16 +10,20 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="mobile-keyboard-accessory-bar" @mousedown.prevent>
+  <div class="mobile-keyboard-accessory-bar" @mousedown.prevent @touchstart.prevent>
     <div class="accessory-scroll-track">
       <button class="acc-btn" @click="emit('insert', '\n# ', '\n', 'Заголовок')">H1</button>
       <button class="acc-btn" @click="emit('insert', '\n## ', '\n', 'Подзаголовок')">H2</button>
+      <button class="acc-btn" @click="emit('insert', '\n### ', '\n', 'Секция')">H3</button>
       <button class="acc-btn font-bold" @click="emit('insert', '**', '**', 'текст')">B</button>
       <button class="acc-btn font-italic" @click="emit('insert', '*', '*', 'текст')">I</button>
       <button class="acc-btn" @click="emit('insert', '~~', '~~', 'текст')">S</button>
       <button class="acc-btn accent-btn" @click="emit('insert', '[[', ']]', 'Сущность')">[[ Wiki ]]</button>
       <button class="acc-btn accent-btn" @click="emit('insert', '@', ' ', 'Персонаж')">@Имя</button>
+      <button class="acc-btn highlight-btn" @click="emit('insert', '==', '==', 'важное')">==Выделить==</button>
+      <button class="acc-btn spoiler-btn" @click="emit('insert', '||', '||', 'спойлер')">||Спойлер||</button>
       <button class="acc-btn" @click="emit('insert', '\n> «', '»\n', 'Цитата')">« »</button>
+      <button class="acc-btn" @click="emit('insert', '\n- [ ] ', '\n', 'Задача')">☑ Чеклист</button>
       <button class="acc-btn" @click="emit('insert', '\n- ', '\n', 'Пункт')">• Список</button>
       <button class="acc-btn" @click="emit('insert', '`', '`', 'код')">&lt;/&gt;</button>
       <button class="acc-btn" @click="emit('insert', '\n\n---\n\n', '', '')">— Разделитель</button>
@@ -45,14 +49,15 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(10, 14, 24, 0.96);
-  backdrop-filter: blur(20px);
+  background: rgba(8, 12, 22, 0.98);
+  backdrop-filter: blur(24px);
   border-top: 1px solid var(--border);
   padding: 6px 10px;
   gap: 8px;
   width: 100%;
   flex-shrink: 0;
   z-index: 45;
+  touch-action: pan-x;
 }
 
 .accessory-scroll-track {
@@ -62,6 +67,7 @@ const emit = defineEmits<{
   overflow-x: auto;
   flex: 1;
   padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .acc-btn {
@@ -70,7 +76,7 @@ const emit = defineEmits<{
   color: var(--text-main);
   border-radius: 8px;
   min-width: 36px;
-  height: 34px;
+  height: 36px;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 700;
@@ -79,11 +85,14 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .acc-btn:active {
   background: var(--accent-indigo);
   color: #fff;
+  transform: scale(0.95);
 }
 
 .font-bold {
@@ -96,8 +105,20 @@ const emit = defineEmits<{
 
 .accent-btn {
   color: var(--accent-cyan);
-  border-color: rgba(6, 182, 212, 0.3);
-  background: rgba(6, 182, 212, 0.08);
+  border-color: rgba(6, 182, 212, 0.35);
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.highlight-btn {
+  color: #fef08a;
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.spoiler-btn {
+  color: var(--accent-purple);
+  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.1);
 }
 
 .acc-save-btn {
@@ -105,7 +126,7 @@ const emit = defineEmits<{
   border: none;
   color: #fff;
   border-radius: 8px;
-  height: 34px;
+  height: 36px;
   padding: 0 12px;
   font-size: 11px;
   font-weight: 800;
@@ -114,6 +135,7 @@ const emit = defineEmits<{
   gap: 6px;
   flex-shrink: 0;
   cursor: pointer;
+  user-select: none;
 }
 
 .acc-save-btn:disabled {

@@ -94,14 +94,14 @@ const sprintDisplayLabel = computed(() =>
   display: flex;
   align-items: center;
   justify-content: space-around;
-  background: rgba(6, 9, 16, 0.95);
+  background: rgba(6, 9, 16, 0.96);
   backdrop-filter: blur(28px) saturate(200%);
   border-top: 1px solid var(--border);
-  padding: 6px 4px max(8px, env(safe-area-inset-bottom)) 4px;
+  padding: 6px 4px max(10px, env(safe-area-inset-bottom)) 4px;
   position: relative;
   z-index: 100;
   flex-shrink: 0;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.85);
 }
 
 .mobile-dock-item {
@@ -116,12 +116,15 @@ const sprintDisplayLabel = computed(() =>
   min-width: 48px;
   height: 48px;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: 12px;
   transition: all 0.15s ease;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .mobile-dock-item:active {
   transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .mobile-dock-item.active {

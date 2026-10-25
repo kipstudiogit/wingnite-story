@@ -1,36 +1,9 @@
-use serde::{Deserialize, Serialize};
+use crate::error::AppError;
+use crate::models::{GraphEdgePacked, GraphNodePacked, GraphTopologyPayload};
+use crate::EnterpriseDbPool;
+use rusqlite::params;
 use std::collections::HashMap;
 use tauri::State;
-use rusqlite::params;
-use crate::{AppError, EnterpriseDbPool};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GraphNodePacked {
-    pub id: String,
-    pub index: u32,
-    pub label: String,
-    pub category: String,
-    pub is_divine: bool,
-    pub mass: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GraphEdgePacked {
-    pub source_idx: u32,
-    pub target_idx: u32,
-    pub relation_type: String,
-    pub weight: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GraphTopologyPayload {
-    pub nodes: Vec<GraphNodePacked>,
-    pub edges: Vec<GraphEdgePacked>,
-    pub revision: i64,
-}
 
 #[tauri::command]
 pub async fn fetch_packed_topology(
@@ -40,112 +13,46 @@ pub async fn fetch_packed_topology(
     let db = state.reader.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock();
+        let target_pid = project_id.unwrap_or_else(|| "default_project".to_string());
+
+        let mut node_stmt = conn.prepare_cached(
+            "SELECT id, title, category, revision 
+             FROM stories 
+             WHERE project_id = ?1 
+             ORDER BY sort_order ASC, updated_at DESC",
+        )?;
 
         let mut nodes = Vec::new();
         let mut id_to_index = HashMap::new();
         let mut current_idx = 0u32;
 
-        if let Some(ref pid) = project_id {
-            if !pid.is_empty() {
-                let mut node_stmt = conn.prepare_cached(
-                    "SELECT id, title, category, revision 
-                     FROM stories 
-                     WHERE project_id = ?1 
-                     ORDER BY updated_at DESC",
-                )?;
+        let node_rows = node_stmt.query_map(params![target_pid], |row| {
+            let id: String = row.get(0)?;
+            let title: String = row.get(1)?;
+            let category: String = row.get(2)?;
+            let rev: i64 = row.get(3)?;
+            Ok((id, title, category, rev))
+        })?;
 
-                let node_rows = node_stmt.query_map(params![pid], |row| {
-                    let id: String = row.get(0)?;
-                    let title: String = row.get(1)?;
-                    let category: String = row.get(2)?;
-                    let rev: i64 = row.get(3)?;
-                    Ok((id, title, category, rev))
-                })?;
+        for item in node_rows {
+            let (id, title, category, rev) = item?;
+            let is_divine = category.contains("Артефакт")
+                || category.contains("Демиург")
+                || category.contains("Реликвия");
 
-                for item in node_rows {
-                    let (id, title, category, rev) = item?;
-                    let is_divine = category.contains("Артефакт")
-                        || category.contains("Демиург")
-                        || category.contains("Реликвия");
+            let mass = 1.0 + (rev as f32 * 0.1).min(3.0);
 
-                    let mass = 1.0 + (rev as f32 * 0.1).min(3.0);
-
-                    id_to_index.insert(id.clone(), current_idx);
-                    nodes.push(GraphNodePacked {
-                        id,
-                        index: current_idx,
-                        label: title,
-                        category,
-                        is_divine,
-                        mass,
-                    });
-                    current_idx += 1;
-                }
-            } else {
-                let mut node_stmt = conn.prepare_cached(
-                    "SELECT id, title, category, revision FROM stories ORDER BY updated_at DESC",
-                )?;
-
-                let node_rows = node_stmt.query_map([], |row| {
-                    let id: String = row.get(0)?;
-                    let title: String = row.get(1)?;
-                    let category: String = row.get(2)?;
-                    let rev: i64 = row.get(3)?;
-                    Ok((id, title, category, rev))
-                })?;
-
-                for item in node_rows {
-                    let (id, title, category, rev) = item?;
-                    let is_divine = category.contains("Артефакт")
-                        || category.contains("Демиург")
-                        || category.contains("Реликвия");
-
-                    let mass = 1.0 + (rev as f32 * 0.1).min(3.0);
-
-                    id_to_index.insert(id.clone(), current_idx);
-                    nodes.push(GraphNodePacked {
-                        id,
-                        index: current_idx,
-                        label: title,
-                        category,
-                        is_divine,
-                        mass,
-                    });
-                    current_idx += 1;
-                }
-            }
-        } else {
-            let mut node_stmt = conn.prepare_cached(
-                "SELECT id, title, category, revision FROM stories ORDER BY updated_at DESC",
-            )?;
-
-            let node_rows = node_stmt.query_map([], |row| {
-                let id: String = row.get(0)?;
-                let title: String = row.get(1)?;
-                let category: String = row.get(2)?;
-                let rev: i64 = row.get(3)?;
-                Ok((id, title, category, rev))
-            })?;
-
-            for item in node_rows {
-                let (id, title, category, rev) = item?;
-                let is_divine = category.contains("Артефакт")
-                    || category.contains("Демиург")
-                    || category.contains("Реликвия");
-
-                let mass = 1.0 + (rev as f32 * 0.1).min(3.0);
-
-                id_to_index.insert(id.clone(), current_idx);
-                nodes.push(GraphNodePacked {
-                    id,
-                    index: current_idx,
-                    label: title,
-                    category,
-                    is_divine,
-                    mass,
-                });
-                current_idx += 1;
-            }
+            id_to_index.insert(id.clone(), current_idx);
+            nodes.push(GraphNodePacked {
+                id,
+                index: current_idx,
+                label: title,
+                category,
+                is_divine,
+                mass,
+                degree: 0,
+            });
+            current_idx += 1;
         }
 
         let mut edge_stmt = conn.prepare_cached(
@@ -166,7 +73,7 @@ pub async fn fetch_packed_topology(
                 let weight = if r_type.contains("Вражда") {
                     2.0
                 } else if r_type.contains("Владение") {
-                    1.5
+                    1.6
                 } else {
                     1.0
                 };
@@ -177,6 +84,13 @@ pub async fn fetch_packed_topology(
                     relation_type: r_type,
                     weight,
                 });
+
+                if let Some(src_node) = nodes.get_mut(src_idx as usize) {
+                    src_node.degree += 1;
+                }
+                if let Some(tgt_node) = nodes.get_mut(tgt_idx as usize) {
+                    tgt_node.degree += 1;
+                }
             }
         }
 

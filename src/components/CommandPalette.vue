@@ -51,6 +51,7 @@ const displayItems = computed(() => {
           category: res.category,
           content: "",
           revision: 1,
+          sortOrder: 0,
           contentHash: "",
           updatedAt: 0,
         },

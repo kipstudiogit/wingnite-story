@@ -2,10 +2,12 @@
 import { ref, watch, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { StudioViewMode, TextMetricsResult } from "../types";
-import { renderMarkdown } from "../utils/markdown";
+import { renderMarkdown, toggleMarkdownTask } from "../utils/markdown";
 import { useNarrativeLsp } from "../composables/useNarrativeLsp";
 import { useLoreGuardian } from "../composables/useLoreGuardian";
 import { useEnterpriseVault } from "../composables/useEnterpriseVault";
+import { useHaptics } from "../composables/useHaptics";
+import { useAppSettings } from "../composables/useAppSettings";
 import AnalyticsDrawer from "./studio/AnalyticsDrawer.vue";
 import LoreDrawer from "./studio/LoreDrawer.vue";
 import VaultDrawer from "./studio/VaultDrawer.vue";
@@ -35,7 +37,11 @@ const emit = defineEmits<{
   (e: "save"): void;
   (e: "delete"): void;
   (e: "selectStoryById", id: string): void;
+  (e: "selectEntityByTitle", entityTitle: string): void;
 }>();
+
+const { settings } = useAppSettings();
+const { vibrateLight, vibrateSelection, vibrateSuccess } = useHaptics();
 
 const {
   isSuggestionsOpen,
@@ -81,11 +87,16 @@ const renderedHtml = ref(renderMarkdown(content.value));
 const metrics = ref<TextMetricsResult>({
   wordCount: 0,
   charCount: 0,
+  paragraphCount: 0,
   readingTimeMinutes: 0,
   dialogueRatio: 0,
   sentenceCadence: 0,
   vocabularyRichness: 0,
+  fleschReadingEase: 0,
+  sentimentTone: "Нейтральный",
   repetitionWarnings: [],
+  clicheWarnings: [],
+  pacingTimeline: [0, 0, 0, 0, 0, 0, 0, 0],
 });
 
 let parseDebounce: number | null = null;
@@ -110,7 +121,9 @@ watch(content, (newText: string) => {
     }
   }, 180);
 
-  triggerLoreAuditDebounced(newText);
+  if (settings.value.loreAuditOnInput) {
+    triggerLoreAuditDebounced(newText);
+  }
 });
 
 function handleTextareaInput(e: Event) {
@@ -137,6 +150,7 @@ async function confirmSuggestion(sug: typeof suggestions.value[0]) {
   const cursor = el ? el.selectionStart : content.value.length;
   const { nextText, nextCursor } = await applySuggestion(sug, content.value, cursor, operator);
   content.value = nextText;
+  vibrateLight();
   requestAnimationFrame(() => {
     if (el) {
       el.focus();
@@ -197,10 +211,30 @@ function wrapSelection(prefix: string, suffix: string, placeholder = "") {
       content.value.substring(0, start) + replacement + content.value.substring(end);
   }
 
+  vibrateLight();
   requestAnimationFrame(() => {
     el.focus();
     el.setSelectionRange(start + prefix.length, start + prefix.length + selected.length);
   });
+}
+
+function handlePreviewClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+
+  const wikilink = target.closest(".md-wikilink") as HTMLElement | null;
+  if (wikilink && wikilink.dataset.entity) {
+    e.preventDefault();
+    vibrateSelection();
+    emit("selectEntityByTitle", wikilink.dataset.entity);
+    return;
+  }
+
+  const taskCheck = target.closest(".task-check") as HTMLInputElement | null;
+  if (taskCheck && taskCheck.dataset.taskIndex !== undefined) {
+    const idx = parseInt(taskCheck.dataset.taskIndex, 10);
+    content.value = toggleMarkdownTask(content.value, idx);
+    vibrateSuccess();
+  }
 }
 
 onMounted(() => {
@@ -228,6 +262,7 @@ onMounted(() => {
     <div
       v-show="studioMode !== 'preview' && mobileActiveTab !== 'preview'"
       class="editor-chassis"
+      :style="{ maxWidth: settings.canvasMaxWidth }"
     >
       <div class="editor-telemetry-header">
         <div class="meta-input-capsules">
@@ -275,13 +310,7 @@ onMounted(() => {
             title="Страж лора и поиск смысла"
             @click="showLore = !showLore"
           >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="m4.93 4.93 4.24 4.24"/>
-              <path d="m14.83 9.17 4.24-4.24"/>
-              <path d="m14.83 14.83 4.24 4.24"/>
-              <path d="m9.17 14.83-4.24 4.24"/>
-            </svg>
+            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
           </button>
 
           <button
@@ -290,10 +319,7 @@ onMounted(() => {
             title="Управление криптосейфом"
             @click="showVault = !showVault"
           >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
+            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </button>
 
           <button
@@ -302,11 +328,7 @@ onMounted(() => {
             title="Лингвистическая телеметрия"
             @click="showAnalytics = !showAnalytics"
           >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="20" x2="18" y2="10"/>
-              <line x1="12" y1="20" x2="12" y2="4"/>
-              <line x1="6" y1="20" x2="6" y2="14"/>
-            </svg>
+            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           </button>
 
           <button
@@ -315,10 +337,7 @@ onMounted(() => {
             :title="hasActive ? 'Удалить сцену' : 'Очистить черновик'"
             @click="emit('delete')"
           >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-            </svg>
+            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
       </div>
@@ -331,75 +350,21 @@ onMounted(() => {
 
       <div class="quantum-tools-strip">
         <div class="tools-horizontal-lane">
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n# ', '\n', 'Заголовок 1')">
-            <span class="tool-label-text">H1</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n## ', '\n', 'Заголовок 2')">
-            <span class="tool-label-text">H2</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n### ', '\n', 'Заголовок 3')">
-            <span class="tool-label-text">H3</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n#### ', '\n', 'Заголовок 4')">
-            <span class="tool-label-text">H4</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('**', '**', 'жирный текст')">
-            <span class="tool-label-text"><b>B</b></span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('*', '*', 'курсивный текст')">
-            <span class="tool-label-text"><i>I</i></span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('~~', '~~', 'зачеркнутый')">
-            <span class="tool-label-text"><s>S</s></span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('==', '==', 'выделение')">
-            <span class="tool-label-text"><mark class="chip-mark">Mark</mark></span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('||', '||', 'секретный текст')">
-            <span class="tool-label-text">Спойлер</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[[', ']]', 'Сущность')">
-            <span class="tool-label-text">[[Wiki]]</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('@', ' ', 'Персонаж')">
-            <span class="tool-label-text">@Персонаж</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> «', '»\n', 'Прямая речь')">
-            <span class="tool-label-text">«Прямая речь»</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> [!NOTE]\n> ', '\n', 'Важная сюжетная заметка')">
-            <span class="tool-label-text">Заметка [!]</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> [!WARNING]\n> ', '\n', 'Предупреждение о каноне')">
-            <span class="tool-label-text">Внимание [!]</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- [ ] ', '\n', 'Задача к сцене')">
-            <span class="tool-label-text">☑ Чеклист</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- ', '\n', 'Элемент списка')">
-            <span class="tool-label-text">• Список</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n1. ', '\n', 'Нумерованный пункт')">
-            <span class="tool-label-text">1. Пункт</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[', '](https://)', 'текст ссылки')">
-            <span class="tool-label-text">Ссылка</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('`', '`', 'код')">
-            <span class="tool-label-text">&lt;/&gt;</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n```\n', '\n```\n', 'блок кода')">
-            <span class="tool-label-text">Код-блок</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n| Параметр | Значение |\n|---|---|\n| Реликвия | Астральная Сталь |\n', '', '')">
-            <span class="tool-label-text">Таблица</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n\n***\n\n', '', '')">
-            <span class="tool-label-text">Астеризм ***</span>
-          </button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n<details>\n<summary>Тайные хроники</summary>\n\n', '\n</details>\n', 'Скрытые факты...')">
-            <span class="tool-label-text">Детали</span>
-          </button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n# ', '\n', 'Заголовок 1')">H1</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n## ', '\n', 'Заголовок 2')">H2</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n### ', '\n', 'Заголовок 3')">H3</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('**', '**', 'жирный текст')"><b>B</b></button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('*', '*', 'курсивный текст')"><i>I</i></button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('~~', '~~', 'зачеркнутый')"><s>S</s></button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('==', '==', 'выделение')">Mark</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('||', '||', 'секретный текст')">Спойлер</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[[', ']]', 'Сущность')">[[Wiki]]</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('@', ' ', 'Персонаж')">@Персонаж</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> «', '»\n', 'Прямая речь')">«Прямая речь»</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- [ ] ', '\n', 'Задача')">☑ Чеклист</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- ', '\n', 'Пункт')">• Список</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('`', '`', 'код')">&lt;/&gt;</button>
+          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n\n***\n\n', '', '')">Астеризм ***</button>
         </div>
       </div>
 
@@ -407,8 +372,13 @@ onMounted(() => {
         <textarea
           ref="textareaRef"
           v-model="content"
-          class="enterprise-textarea"
-          placeholder="Формирование зашифрованного драфта. Введите [[ для автокомплита сущностей..."
+          :class="['enterprise-textarea', { 'smooth-caret': settings.smoothCaret }]"
+          :style="{
+            fontFamily: settings.editorFontFamily,
+            lineHeight: settings.editorLineHeight,
+            fontSize: `${fontSize}px`,
+          }"
+          placeholder="Начните писать сцену или введите [[ для ссылки на сущность..."
           autofocus
           @input="handleTextareaInput"
           @keydown="handleTextareaKeydown"
@@ -484,6 +454,7 @@ onMounted(() => {
         class="preview-parchment-sheet markdown-rendered"
         :style="{ fontSize: `${fontSize}px` }"
         v-html="renderedHtml"
+        @click="handlePreviewClick"
       ></div>
     </div>
   </section>
@@ -507,7 +478,7 @@ onMounted(() => {
 .dual-tab-pill {
   flex: 1;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
@@ -543,18 +514,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-.enterprise-workbench-studio.mode-edit .editor-chassis {
-  flex: 1;
-  max-width: 1080px;
-  margin: 0 auto;
-}
-
-.enterprise-workbench-studio.mode-zen .editor-chassis {
-  flex: 1;
-  max-width: 840px;
-  margin: 0 auto;
-}
-
 .editor-chassis {
   display: flex;
   flex-direction: column;
@@ -563,6 +522,8 @@ onMounted(() => {
   height: 100%;
   flex: 1;
   min-width: 0;
+  margin: 0 auto;
+  transition: max-width 0.2s ease;
 }
 
 .editor-telemetry-header {
@@ -582,7 +543,6 @@ onMounted(() => {
   flex: 3;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
   color: var(--text-pure);
   padding: 0 16px;
   height: 42px;
@@ -617,8 +577,8 @@ onMounted(() => {
 .revision-telemetry-badge {
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 10px;
   height: 42px;
   padding: 0 10px;
@@ -642,7 +602,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   height: 42px;
@@ -672,8 +632,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   color: var(--accent-emerald);
   height: 42px;
   padding: 0 12px;
@@ -683,17 +643,8 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.lore-score-badge.warning {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: var(--accent-gold);
-}
-
-.lore-score-badge.danger {
-  background: rgba(244, 63, 94, 0.15);
-  border-color: rgba(244, 63, 94, 0.35);
-  color: var(--accent-rose);
-}
+.lore-score-badge.warning { color: var(--accent-gold); }
+.lore-score-badge.danger { color: var(--accent-rose); }
 
 .tactile-icon-btn {
   background: var(--bg-card);
@@ -722,7 +673,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(244, 63, 94, 0.15);
+  background: rgba(244, 63, 94, 0.12);
   border: 1px solid var(--accent-rose);
   border-radius: 10px;
   padding: 8px 14px;
@@ -752,7 +703,7 @@ onMounted(() => {
 }
 
 .tool-chip-btn {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-muted);
   padding: 0 10px;
@@ -766,20 +717,8 @@ onMounted(() => {
 }
 
 .tool-chip-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-accent);
   color: var(--text-pure);
-}
-
-.tool-label-text {
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.chip-mark {
-  background: rgba(245, 158, 11, 0.25);
-  color: var(--accent-gold);
-  padding: 0 3px;
-  border-radius: 3px;
 }
 
 .editor-viewport-well {
@@ -799,12 +738,14 @@ onMounted(() => {
   width: 100%;
   background: transparent;
   border: none;
-  color: var(--text-pure);
-  font-size: 16px;
-  line-height: 1.85;
+  color: var(--text-main);
   outline: none;
   resize: none;
   user-select: text;
+}
+
+.enterprise-textarea.smooth-caret {
+  caret-color: var(--accent-cyan);
 }
 
 .editor-bottom-hud {
@@ -834,7 +775,7 @@ onMounted(() => {
   height: 100%;
   overflow-y: auto;
   padding: 32px 42px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--bg-card);
   user-select: text;
 }
 
@@ -868,7 +809,6 @@ onMounted(() => {
 
   .mobile-dual-nav {
     display: flex !important;
-    flex-direction: row !important;
     width: 100% !important;
     padding: 8px 12px;
     background: var(--bg-surface-solid);
@@ -892,36 +832,13 @@ onMounted(() => {
     display: none !important;
   }
 
-  .header-action-controls {
-    justify-content: space-between;
-    width: 100%;
-  }
-
   .editor-viewport-well {
     padding: 14px 12px;
-  }
-
-  .enterprise-textarea {
-    font-size: 15px;
-    line-height: 1.75;
   }
 
   .preview-chassis {
     padding: 16px 14px;
     width: 100% !important;
-  }
-
-  :deep(.analytics-drawer),
-  :deep(.lore-drawer),
-  :deep(.vault-drawer) {
-    width: 100% !important;
-    border-radius: 16px 16px 0 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    top: auto !important;
-    bottom: 0 !important;
-    max-height: 80vh !important;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.9) !important;
   }
 }
 </style>

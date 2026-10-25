@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { renderMarkdown } from "../utils/markdown";
-import type { StoryItem } from "../types";
+import type { EntityRelationItem, StoryItem } from "../types";
+import { useHaptics } from "../composables/useHaptics";
+import { invoke } from "@tauri-apps/api/core";
 
 const { stories } = defineProps<{
   stories: StoryItem[];
@@ -10,17 +12,43 @@ const { stories } = defineProps<{
 const emit = defineEmits<{
   (e: "select", story: StoryItem): void;
   (e: "createEntity", type: "artifact" | "pantheon" | "sanctuary" | "character"): void;
+  (e: "saveEntity", story: StoryItem): void;
 }>();
 
-const filterCategory = ref<string>("all");
-const searchQuery = ref<string>("");
-const mouseCoords = ref<Map<string, { x: number; y: number }>>(new Map());
+const { vibrateLight, vibrateSelection, vibrateSuccess } = useHaptics();
 
-interface CodexDossierItem extends StoryItem {
-  icon: string;
-  isDivine: boolean;
-  resonance: number;
-  previewHtml: string;
+const activeFilter = ref<string>("ALL");
+const searchQuery = ref<string>("");
+const sortBy = ref<"title" | "resonance" | "revision">("resonance");
+const viewLayout = ref<"grid" | "table">("grid");
+
+const showCreatorDrawer = ref(false);
+const newEntityName = ref("");
+const newEntityType = ref<"character" | "artifact" | "pantheon" | "sanctuary">("character");
+const newEntityArchetype = ref("Искатель");
+const newEntityStatus = ref("Активен");
+const newEntityDesc = ref("");
+
+const selectedEntity = ref<StoryItem | null>(null);
+const activeModalTab = ref<"dossier" | "relations" | "chronicle" | "editor">("dossier");
+const relationsList = ref<EntityRelationItem[]>([]);
+const newRelTargetId = ref("");
+const newRelType = ref("Союзник");
+const newRelDesc = ref("");
+
+const categoriesMap: Record<string, { label: string; icon: string }> = {
+  ALL: { label: "Все карточки", icon: "❖" },
+  character: { label: "Персонажи", icon: "👤" },
+  artifact: { label: "Артефакты", icon: "🔮" },
+  pantheon: { label: "Демиурги", icon: "👑" },
+  sanctuary: { label: "Святилища", icon: "🏛️" },
+};
+
+function getCategoryColor(cat: string) {
+  if (cat.includes("Артефакт") || cat.includes("Реликвия")) return "var(--accent-purple)";
+  if (cat.includes("Демиург") || cat.includes("Сущность")) return "var(--accent-gold)";
+  if (cat.includes("Святилище") || cat.includes("Локация")) return "var(--accent-cyan)";
+  return "var(--accent-indigo)";
 }
 
 function calculateResonance(id: string, text: string): number {
@@ -29,182 +57,331 @@ function calculateResonance(id: string, text: string): number {
     hash = (hash << 5) - hash + id.charCodeAt(i);
     hash |= 0;
   }
-  return 65 + (Math.abs(hash + text.length) % 35);
+  return 70 + (Math.abs(hash + text.length) % 30);
 }
 
-function getEntityIcon(category: string) {
-  if (category.includes("Артефакт") || category.includes("Реликвия")) return "🔮";
-  if (category.includes("Демиург") || category.includes("Сущность")) return "👑";
-  if (category.includes("Святилище") || category.includes("Локация")) return "🏛️";
-  return "👤";
-}
-
-const categorizedCodex = computed<CodexDossierItem[]>(() => {
-  const result: CodexDossierItem[] = [];
-  const q = searchQuery.value.toLowerCase().trim();
-
-  for (const item of stories) {
-    const isCodex =
+const allCodexEntities = computed(() => {
+  return stories.filter((item) => {
+    return (
       item.category.includes("Персонаж") ||
       item.category.includes("Артефакт") ||
       item.category.includes("Демиург") ||
       item.category.includes("Святилище") ||
-      item.category.includes("Локация");
-
-    if (!isCodex) continue;
-
-    if (filterCategory.value !== "all") {
-      if (!item.category.toLowerCase().includes(filterCategory.value)) continue;
-    }
-
-    if (q) {
-      const match =
-        item.title.toLowerCase().includes(q) ||
-        item.content.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q);
-      if (!match) continue;
-    }
-
-    result.push({
-      ...item,
-      icon: getEntityIcon(item.category),
-      isDivine: item.category.includes("Артефакт") || item.category.includes("Демиург"),
-      resonance: calculateResonance(item.id, item.content),
-      previewHtml: renderMarkdown(item.content.slice(0, 180)),
-    });
-  }
-  return result;
+      item.category.includes("Локация") ||
+      item.category.includes("Реликвия")
+    );
+  });
 });
 
-function handleMouseMove(id: string, e: MouseEvent) {
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  mouseCoords.value.set(id, {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top,
+const filteredEntities = computed(() => {
+  const q = searchQuery.value.toLowerCase().trim();
+  let list = allCodexEntities.value.filter((item) => {
+    if (activeFilter.value === "character") return item.category.includes("Персонаж");
+    if (activeFilter.value === "artifact") return item.category.includes("Артефакт") || item.category.includes("Реликвия");
+    if (activeFilter.value === "pantheon") return item.category.includes("Демиург") || item.category.includes("Сущность");
+    if (activeFilter.value === "sanctuary") return item.category.includes("Святилище") || item.category.includes("Локация");
+    return true;
   });
+
+  if (q) {
+    list = list.filter((i) => i.title.toLowerCase().includes(q) || i.content.toLowerCase().includes(q));
+  }
+
+  if (sortBy.value === "title") {
+    list.sort((a, b) => a.title.localeCompare(b.title));
+  } else if (sortBy.value === "resonance") {
+    list.sort((a, b) => calculateResonance(b.id, b.content) - calculateResonance(a.id, a.content));
+  } else {
+    list.sort((a, b) => b.revision - a.revision);
+  }
+
+  return list;
+});
+
+async function openDossier(item: StoryItem) {
+  selectedEntity.value = { ...item };
+  activeModalTab.value = "dossier";
+  vibrateSelection();
+  await loadEntityRelations(item.id);
 }
 
-function handleMouseLeave(id: string) {
-  mouseCoords.value.delete(id);
+async function loadEntityRelations(entityId: string) {
+  try {
+    const all = await invoke<EntityRelationItem[]>("fetch_entity_relations");
+    relationsList.value = all.filter((r) => r.sourceId === entityId || r.targetId === entityId);
+  } catch {
+    relationsList.value = [];
+  }
+}
+
+async function handleAddRelation() {
+  if (!selectedEntity.value || !newRelTargetId.value) return;
+  const payload: EntityRelationItem = {
+    id: "",
+    sourceId: selectedEntity.value.id,
+    targetId: newRelTargetId.value,
+    relationType: newRelType.value,
+    description: newRelDesc.value.trim() || "Связь из Кодекса",
+  };
+  try {
+    await invoke("mutate_entity_relation", { relation: payload, operator: "Codex-Custodian" });
+    vibrateSuccess();
+    newRelDesc.value = "";
+    await loadEntityRelations(selectedEntity.value.id);
+  } catch {}
+}
+
+function handleSaveInlineEdit() {
+  if (!selectedEntity.value) return;
+  emit("saveEntity", selectedEntity.value);
+  vibrateSuccess();
+}
+
+function handleCreateFromForm() {
+  if (!newEntityName.value.trim()) return;
+  let categoryName = "Персонаж";
+  if (newEntityType.value === "artifact") categoryName = "Божественный Артефакт";
+  if (newEntityType.value === "pantheon") categoryName = "Демиург / Сущность";
+  if (newEntityType.value === "sanctuary") categoryName = "Святилище Сил";
+
+  const template = `### Досье: ${newEntityName.value}\n* **Класс / Архетип:** ${newEntityArchetype.value}\n* **Статус:** ${newEntityStatus.value}\n\n${newEntityDesc.value || 'Описание свойств и истории...'}`;
+
+  const dummyItem: StoryItem = {
+    id: "",
+    projectId: "",
+    title: newEntityName.value,
+    content: template,
+    category: categoryName,
+    revision: 1,
+    sortOrder: 0,
+    contentHash: "",
+    updatedAt: 0,
+  };
+
+  emit("select", dummyItem);
+  showCreatorDrawer.value = false;
+  newEntityName.value = "";
+  newEntityDesc.value = "";
+  vibrateSuccess();
 }
 </script>
 
 <template>
   <section class="quantum-codex-stage">
-    <header class="codex-quantum-header">
-      <div class="header-branding">
-        <h2>Реестр Сущностей и Реликвий</h2>
-        <p>Архивная база персонажей, артефактов и лора текущего произведения</p>
+    <!-- Шапка реестра -->
+    <header class="codex-master-header">
+      <div class="header-left">
+        <span class="codex-sigil">◈</span>
+        <div>
+          <h2>Кодекс Мироздания</h2>
+          <p>Архив персонажей, реликвий, демиургов и онтологических законов</p>
+        </div>
       </div>
 
-      <div class="codex-action-cluster">
-        <button class="btn-summon character" @click="emit('createEntity', 'character')">
-          <span class="btn-flare"></span>
-          + Персонаж
-        </button>
-        <button class="btn-summon relic" @click="emit('createEntity', 'artifact')">
-          <span class="btn-flare"></span>
-          + Артефакт
-        </button>
-        <button class="btn-summon demiurge" @click="emit('createEntity', 'pantheon')">
-          <span class="btn-flare"></span>
-          + Демиург
-        </button>
-        <button class="btn-summon sanctuary" @click="emit('createEntity', 'sanctuary')">
-          <span class="btn-flare"></span>
-          + Святилище
+      <div class="header-actions">
+        <button class="btn-primary-creator" @click="showCreatorDrawer = true; vibrateLight()">
+          <span>+ Создать сущность</span>
         </button>
       </div>
     </header>
 
-    <div class="codex-controls-bar">
-      <div class="filter-pills-row">
+    <!-- Панель инструментов и таксономия -->
+    <div class="codex-control-panel">
+      <div class="taxonomy-rail">
         <button
-          :class="['filter-pill', { active: filterCategory === 'all' }]"
-          @click="filterCategory = 'all'"
+          v-for="(meta, key) in categoriesMap"
+          :key="key"
+          :class="['taxonomy-pill', { active: activeFilter === key }]"
+          @click="activeFilter = key; vibrateLight()"
         >
-          Все ({{ categorizedCodex.length }})
-        </button>
-        <button
-          :class="['filter-pill', { active: filterCategory === 'персонаж' }]"
-          @click="filterCategory = 'персонаж'"
-        >
-          Персонажи
-        </button>
-        <button
-          :class="['filter-pill', { active: filterCategory === 'артефакт' }]"
-          @click="filterCategory = 'артефакт'"
-        >
-          Артефакты
-        </button>
-        <button
-          :class="['filter-pill', { active: filterCategory === 'демиург' }]"
-          @click="filterCategory = 'демиург'"
-        >
-          Демиурги
-        </button>
-        <button
-          :class="['filter-pill', { active: filterCategory === 'святилище' }]"
-          @click="filterCategory = 'святилище'"
-        >
-          Святилища
+          <span class="pill-icon">{{ meta.icon }}</span>
+          <span>{{ meta.label }}</span>
         </button>
       </div>
 
-      <div class="codex-search-box">
-        <span class="search-lens">⌕</span>
-        <input
-          v-model="searchQuery"
-          class="codex-search-input"
-          placeholder="Фильтр реестра..."
-        />
+      <div class="filter-controls-group">
+        <div class="layout-switch-pills">
+          <button :class="['btn-layout-mode', { active: viewLayout === 'grid' }]" title="Сетка" @click="viewLayout = 'grid'">⊞</button>
+          <button :class="['btn-layout-mode', { active: viewLayout === 'table' }]" title="Таблица" @click="viewLayout = 'table'">☰</button>
+        </div>
+
+        <select v-model="sortBy" class="select-sort">
+          <option value="resonance">По резонансу</option>
+          <option value="title">По алфавиту</option>
+          <option value="revision">По ревизиям</option>
+        </select>
+
+        <div class="search-input-capsule">
+          <span>⌕</span>
+          <input v-model="searchQuery" placeholder="Быстрый фильтр реестра..." />
+        </div>
       </div>
     </div>
 
-    <div class="codex-hologram-grid">
+    <!-- Вид 1: Сетка голографических карточек -->
+    <div v-if="viewLayout === 'grid'" class="codex-entities-grid">
       <div
-        v-for="item in categorizedCodex"
+        v-for="item in filteredEntities"
         :key="item.id"
-        :class="['holo-dossier-card', { 'divine-aurora': item.isDivine }]"
-        :style="{
-          '--light-x': `${mouseCoords.get(item.id)?.x ?? 150}px`,
-          '--light-y': `${mouseCoords.get(item.id)?.y ?? 100}px`
-        }"
-        @mousemove="handleMouseMove(item.id, $event)"
-        @mouseleave="handleMouseLeave(item.id)"
-        @click="emit('select', item)"
+        class="codex-holo-card"
+        :style="{ '--category-accent': getCategoryColor(item.category) }"
+        @click="openDossier(item)"
       >
-        <div class="card-gyro-refraction"></div>
-
-        <div class="dossier-header-strip">
-          <div class="avatar-quantum-frame">
-            <span class="avatar-sigil">{{ item.icon }}</span>
-          </div>
-
-          <div class="dossier-heading-text">
-            <span class="dossier-archetype">{{ item.category }}</span>
-            <h3 class="dossier-entity-name">{{ item.title }}</h3>
-          </div>
+        <div class="card-glass-lead"></div>
+        <div class="card-head-strip">
+          <span class="card-category-tag">{{ item.category }}</span>
+          <span class="card-resonance-digit">{{ calculateResonance(item.id, item.content) }}%</span>
         </div>
 
-        <div class="dossier-synopsis markdown-rendered" v-html="item.previewHtml"></div>
+        <h3 class="card-entity-title">{{ item.title }}</h3>
+        <div class="card-markdown-preview markdown-rendered" v-html="renderMarkdown(item.content.slice(0, 150))"></div>
 
-        <div class="dossier-telemetry-dock">
-          <div class="resonance-gauge">
-            <span class="resonance-label">Резонанс</span>
-            <div class="resonance-track">
-              <div class="resonance-bar" :style="{ width: `${item.resonance}%` }"></div>
-            </div>
+        <div class="card-footer-dock">
+          <div class="resonance-bar-track">
+            <div class="resonance-bar-fill" :style="{ width: `${calculateResonance(item.id, item.content)}%` }"></div>
           </div>
-          <span class="resonance-digit">{{ item.resonance }}%</span>
+          <span class="card-inspect-hint">Открыть досье →</span>
         </div>
       </div>
 
-      <div v-if="categorizedCodex.length === 0" class="codex-empty-state">
-        <p>Сущностей данной категории пока не зафиксировано</p>
-        <div class="empty-btn-cluster">
-          <button class="btn-summon character" @click="emit('createEntity', 'character')">+ Создать персонажа</button>
-          <button class="btn-summon relic" @click="emit('createEntity', 'artifact')">+ Создать артефакт</button>
+      <div v-if="filteredEntities.length === 0" class="codex-empty-card">
+        <span class="empty-astral-sigil">✦</span>
+        <h3>В реестре пока нет сущностей этой категории</h3>
+        <p>Создайте персонажа, божественный артефакт или локацию, чтобы оживить канон</p>
+        <button class="btn-create-inline" @click="showCreatorDrawer = true">+ Добавить в реестр</button>
+      </div>
+    </div>
+
+    <!-- Вид 2: Табличный обзор -->
+    <div v-else class="codex-table-view">
+      <table class="codex-table">
+        <thead>
+          <tr>
+            <th>Сущность</th>
+            <th>Категория</th>
+            <th>Резонанс</th>
+            <th>Ревизия</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in filteredEntities" :key="item.id" @click="openDossier(item)">
+            <td class="col-name"><b>{{ item.title }}</b></td>
+            <td><span class="table-cat-badge">{{ item.category }}</span></td>
+            <td><span class="table-res-mono">{{ calculateResonance(item.id, item.content) }}%</span></td>
+            <td>r{{ item.revision }}</td>
+            <td><button class="btn-table-open" @click.stop="openDossier(item)">Досье ↗</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Боковая панель создания сущности -->
+    <div v-if="showCreatorDrawer" class="creator-drawer-backdrop" @click.self="showCreatorDrawer = false">
+      <aside class="creator-drawer-surface">
+        <header class="drawer-header">
+          <h3>Мастерская сущности</h3>
+          <button class="btn-drawer-close" @click="showCreatorDrawer = false">✕</button>
+        </header>
+
+        <div class="creator-fields-form">
+          <div class="field-item">
+            <label>Имя или титул сущности</label>
+            <input v-model="newEntityName" class="modal-input" placeholder="Напр. Элион, Клинок Зари..." />
+          </div>
+
+          <div class="field-item">
+            <label>Онтологическая категория</label>
+            <select v-model="newEntityType" class="modal-input">
+              <option value="character">Персонаж / Искатель</option>
+              <option value="artifact">Божественный Артефакт / Реликвия</option>
+              <option value="pantheon">Демиург / Высшая Сущность</option>
+              <option value="sanctuary">Святилище Сил / Локация</option>
+            </select>
+          </div>
+
+          <div class="field-row">
+            <div class="field-item">
+              <label>Архетип / Класс</label>
+              <input v-model="newEntityArchetype" class="modal-input" />
+            </div>
+            <div class="field-item">
+              <label>Статус</label>
+              <input v-model="newEntityStatus" class="modal-input" />
+            </div>
+          </div>
+
+          <div class="field-item">
+            <label>Описание и ключевые свойства</label>
+            <textarea v-model="newEntityDesc" class="modal-textarea" placeholder="Свойства, цели, уязвимости, история обретения..."></textarea>
+          </div>
+        </div>
+
+        <div class="drawer-footer-row">
+          <button class="btn-submit-entity" @click="handleCreateFromForm">Материализовать в каноне</button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Модальный инспектор досье -->
+    <div v-if="selectedEntity" class="dossier-modal-backdrop" @click.self="selectedEntity = null">
+      <div class="dossier-modal-window">
+        <header class="modal-head">
+          <div class="modal-title-left">
+            <span class="modal-badge">{{ selectedEntity.category }}</span>
+            <h2>{{ selectedEntity.title }}</h2>
+          </div>
+          <div class="modal-head-buttons">
+            <button class="btn-jump-studio" @click="emit('select', selectedEntity)">Открыть в Студии ↗</button>
+            <button class="btn-modal-close" @click="selectedEntity = null">✕</button>
+          </div>
+        </header>
+
+        <nav class="dossier-nav-pills">
+          <button :class="['pill-tab', { active: activeModalTab === 'dossier' }]" @click="activeModalTab = 'dossier'">Досье</button>
+          <button :class="['pill-tab', { active: activeModalTab === 'relations' }]" @click="activeModalTab = 'relations'">Связи ({{ relationsList.length }})</button>
+          <button :class="['pill-tab', { active: activeModalTab === 'editor' }]" @click="activeModalTab = 'editor'">Быстрая правка</button>
+        </nav>
+
+        <div class="modal-scroll-area">
+          <div v-if="activeModalTab === 'dossier'" class="dossier-text-view markdown-rendered" v-html="renderMarkdown(selectedEntity.content)"></div>
+
+          <div v-else-if="activeModalTab === 'relations'" class="relations-view">
+            <div class="add-relation-box">
+              <h4>Добавить связь в реляционный граф</h4>
+              <div class="add-rel-form">
+                <select v-model="newRelTargetId" class="modal-input">
+                  <option value="">Выберите целевую сущность...</option>
+                  <option v-for="s in stories.filter((st) => st.id !== selectedEntity?.id)" :key="s.id" :value="s.id">
+                    {{ s.title }} ({{ s.category }})
+                  </option>
+                </select>
+                <select v-model="newRelType" class="modal-input">
+                  <option value="Союзник">Союзник</option>
+                  <option value="Вражда">Вражда</option>
+                  <option value="Владение">Владение</option>
+                  <option value="Иерархия">Иерархия</option>
+                </select>
+                <input v-model="newRelDesc" class="modal-input" placeholder="Описание связи..." />
+                <button class="btn-add-rel-action" @click="handleAddRelation">Связать</button>
+              </div>
+            </div>
+
+            <div class="relations-feed">
+              <div v-for="rel in relationsList" :key="rel.id" class="rel-feed-item">
+                <span class="rel-badge">{{ rel.relationType }}</span>
+                <span class="rel-text">{{ rel.description }}</span>
+              </div>
+              <div v-if="relationsList.length === 0" class="rel-empty-msg">Связей с другими сущностями пока не зафиксировано</div>
+            </div>
+          </div>
+
+          <div v-else-if="activeModalTab === 'editor'" class="fast-editor-view">
+            <textarea v-model="selectedEntity.content" class="fast-textarea"></textarea>
+            <div class="fast-editor-footer">
+              <button class="btn-fast-save" @click="handleSaveInlineEdit">Сохранить изменения в канон</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -215,342 +392,592 @@ function handleMouseLeave(id: string) {
 .quantum-codex-stage {
   flex: 1;
   overflow-y: auto;
-  padding: 36px 40px calc(var(--safe-bottom) + 80px) 40px;
-  max-width: 1360px;
+  padding: 30px 36px calc(var(--safe-bottom) + 80px) 36px;
+  max-width: 1400px;
   margin: 0 auto;
   width: 100%;
 }
 
-.codex-quantum-header {
+.codex-master-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 28px;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.header-branding h2 {
-  font-size: 28px;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-  background: linear-gradient(135deg, #ffffff 40%, var(--accent-cyan) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.header-branding p {
-  color: var(--text-muted);
-  font-size: 13px;
-  margin-top: 4px;
-}
-
-.codex-action-cluster {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.btn-summon {
-  position: relative;
-  border: none;
-  border-radius: 12px;
-  padding: 10px 18px;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  overflow: hidden;
-  color: #fff;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.btn-summon.character {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
-}
-
-.btn-summon.relic {
-  background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-  box-shadow: 0 4px 20px var(--accent-purple-glow);
-}
-
-.btn-summon.demiurge {
-  background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
-  box-shadow: 0 4px 20px var(--accent-gold-glow);
-}
-
-.btn-summon.sanctuary {
-  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
-  box-shadow: 0 4px 20px var(--accent-cyan-glow);
-}
-
-.btn-flare {
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-25deg);
-  transition: left 0.6s ease;
-}
-
-.btn-summon:hover .btn-flare {
-  left: 200%;
-}
-
-.btn-summon:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-}
-
-.codex-controls-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  margin-bottom: 24px;
   gap: 16px;
-  margin-bottom: 30px;
   flex-wrap: wrap;
 }
 
-.filter-pills-row {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.filter-pill {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-
-.filter-pill:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-main);
-}
-
-.filter-pill.active {
-  background: var(--accent-indigo);
-  border-color: var(--accent-indigo);
-  color: #fff;
-  box-shadow: 0 0 16px var(--accent-indigo-glow);
-}
-
-.codex-search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px 14px;
-  min-width: 260px;
-}
-
-.search-lens {
-  color: var(--text-dim);
-  font-size: 16px;
-}
-
-.codex-search-input {
-  background: transparent;
-  border: none;
-  font-size: 13px;
-  color: var(--text-main);
-  outline: none;
-  width: 100%;
-}
-
-.codex-hologram-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 24px;
-}
-
-.holo-dossier-card {
-  position: relative;
-  background: var(--bg-card);
-  backdrop-filter: blur(28px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-quantum), var(--specular-high);
-  border-radius: 18px;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  cursor: pointer;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.card-gyro-refraction {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(380px circle at var(--light-x, 150px) var(--light-y, 100px), rgba(255, 255, 255, 0.09), transparent 65%);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.holo-dossier-card:hover .card-gyro-refraction {
-  opacity: 1;
-}
-
-.holo-dossier-card:hover {
-  transform: translateY(-4px) scale(1.015);
-  background: var(--bg-card-hover);
-  border-color: var(--border-accent);
-  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.9), 0 0 24px var(--accent-indigo-glow);
-}
-
-.holo-dossier-card.divine-aurora {
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.holo-dossier-card.divine-aurora:hover {
-  border-color: var(--accent-gold);
-  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.9), var(--shadow-neon-gold);
-}
-
-.dossier-header-strip {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.avatar-quantum-frame {
-  width: 58px;
-  height: 58px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-  box-shadow: var(--specular-prismatic);
-  flex-shrink: 0;
-}
-
-.dossier-heading-text {
-  flex: 1;
-  overflow: hidden;
-}
-
-.dossier-archetype {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-cyan);
-}
-
-.divine-aurora .dossier-archetype {
-  color: var(--accent-gold);
-}
-
-.dossier-entity-name {
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.015em;
-  color: var(--text-pure);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.dossier-synopsis {
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.6;
-  max-height: 80px;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.dossier-telemetry-dock {
+.header-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-top: 12px;
+}
+
+.codex-sigil {
+  font-size: 24px;
+  color: var(--accent-cyan);
+}
+
+.header-left h2 {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text-pure);
+}
+
+.header-left p {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.btn-primary-creator {
+  background: linear-gradient(135deg, var(--accent-indigo) 0%, #4338ca 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.codex-control-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.taxonomy-rail {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.taxonomy-pill {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.taxonomy-pill.active {
+  background: var(--accent-indigo);
+  color: #fff;
+  border-color: var(--accent-indigo);
+}
+
+.filter-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layout-switch-pills {
+  display: flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.btn-layout-mode {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-layout-mode.active {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.select-sort {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-pure);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.search-input-capsule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.search-input-capsule input {
+  background: transparent;
+  border: none;
+  color: var(--text-pure);
+  font-size: 12px;
+  outline: none;
+  width: 170px;
+}
+
+.codex-entities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.codex-holo-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.codex-holo-card:hover {
+  border-color: var(--category-accent);
+  transform: translateY(-2px);
+}
+
+.card-head-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-category-tag {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--category-accent);
+}
+
+.card-resonance-digit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.card-entity-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-pure);
+}
+
+.card-markdown-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-height: 60px;
+  overflow: hidden;
+}
+
+.card-footer-dock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
-.resonance-gauge {
+.resonance-bar-track {
   flex: 1;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.resonance-bar-fill {
+  height: 100%;
+  background: var(--category-accent);
+}
+
+.card-inspect-hint {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.codex-empty-card {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.empty-astral-sigil {
+  font-size: 28px;
+  color: var(--accent-cyan);
+}
+
+.btn-create-inline {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Табличный вид */
+.codex-table-view {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.codex-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.codex-table th,
+.codex-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.codex-table th {
+  background: var(--bg-surface-solid);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.table-cat-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--accent-cyan);
+}
+
+.table-res-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-gold);
+}
+
+.btn-table-open {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent-cyan);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Модальный инспектор досье */
+.dossier-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(14px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dossier-modal-window {
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  background: var(--bg-surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+}
+
+.modal-title-left h2 {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text-pure);
+}
+
+.modal-head-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-jump-studio {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--accent-cyan);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.dossier-nav-pills {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.pill-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pill-tab.active {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.modal-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 55vh;
+}
+
+.add-relation-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-rel-form {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modal-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-pure);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  outline: none;
+}
+
+.btn-add-rel-action {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.relations-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rel-feed-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rel-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent-cyan);
+  background: var(--border-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.rel-text {
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.fast-editor-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fast-textarea {
+  width: 100%;
+  height: 280px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 12px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  resize: vertical;
+}
+
+.btn-fast-save {
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Боковая панель мастера создания */
+.creator-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 220;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.creator-drawer-surface {
+  width: 100%;
+  max-width: 440px;
+  height: 100%;
+  background: var(--bg-surface-solid);
+  border-left: 1px solid var(--border);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.9);
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.creator-fields-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.field-item {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.resonance-label {
-  font-size: 10px;
+.field-item label {
+  font-size: 11px;
   font-weight: 700;
+  color: var(--text-dim);
   text-transform: uppercase;
-  color: var(--text-dim);
 }
 
-.resonance-track {
-  height: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.resonance-bar {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-indigo) 0%, var(--accent-cyan) 100%);
-  border-radius: 999px;
-}
-
-.divine-aurora .resonance-bar {
-  background: linear-gradient(90deg, var(--accent-gold) 0%, #fef08a 100%);
-}
-
-.resonance-digit {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-pure);
-}
-
-.codex-empty-state {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-dim);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.empty-btn-cluster {
+.field-row {
   display: flex;
   gap: 10px;
 }
 
-@media (max-width: 768px) {
-  .quantum-codex-stage {
-    padding: 16px 14px calc(var(--safe-bottom) + 84px) 14px;
-  }
+.field-row .field-item {
+  flex: 1;
+}
 
-  .codex-hologram-grid {
-    grid-template-columns: 1fr;
-  }
+.modal-textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-pure);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  min-height: 120px;
+  outline: none;
+}
+
+.btn-submit-entity {
+  width: 100%;
+  background: var(--accent-indigo);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
 }
 </style>

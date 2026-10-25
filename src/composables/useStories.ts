@@ -87,6 +87,7 @@ export function useStories() {
         content: currentContent.value,
         category: currentCategory.value,
         revision: activeStory.value?.revision ?? 1,
+        sortOrder: activeStory.value?.sortOrder ?? 0,
         contentHash: activeStory.value?.contentHash ?? "",
         updatedAt: 0,
       };

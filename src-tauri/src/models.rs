@@ -27,6 +27,7 @@ pub struct EnterpriseStoryItem {
     pub content: String,
     pub category: String,
     pub revision: i64,
+    pub sort_order: i64,
     pub content_hash: String,
     pub updated_at: i64,
 }
@@ -40,7 +41,16 @@ pub struct SaveStoryPayload {
     pub content: String,
     pub category: String,
     pub expected_revision: i64,
+    pub sort_order: Option<i64>,
     pub operator: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryOrderUpdate {
+    pub id: String,
+    pub sort_order: i64,
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,11 +69,16 @@ pub struct AuditLogEntry {
 pub struct TextMetricsResult {
     pub word_count: usize,
     pub char_count: usize,
+    pub paragraph_count: usize,
     pub reading_time_minutes: f64,
     pub dialogue_ratio: f64,
     pub sentence_cadence: f64,
     pub vocabulary_richness: f64,
+    pub flesch_reading_ease: f64,
+    pub sentiment_tone: String,
     pub repetition_warnings: Vec<String>,
+    pub cliche_warnings: Vec<String>,
+    pub pacing_timeline: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,4 +182,43 @@ pub struct WstoryPackage {
     pub timeline_events: Vec<TimelineEventItem>,
     pub entity_relations: Vec<EntityRelationItem>,
     pub checksum: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbStatsPayload {
+    pub total_stories: usize,
+    pub total_projects: usize,
+    pub total_relations: usize,
+    pub total_timeline_events: usize,
+    pub db_size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNodePacked {
+    pub id: String,
+    pub index: u32,
+    pub label: String,
+    pub category: String,
+    pub is_divine: bool,
+    pub mass: f32,
+    pub degree: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphEdgePacked {
+    pub source_idx: u32,
+    pub target_idx: u32,
+    pub relation_type: String,
+    pub weight: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphTopologyPayload {
+    pub nodes: Vec<GraphNodePacked>,
+    pub edges: Vec<GraphEdgePacked>,
+    pub revision: i64,
 }

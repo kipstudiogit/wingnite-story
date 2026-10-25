@@ -12,6 +12,12 @@ export interface SaveProjectPayload {
   description: string;
 }
 
+export interface StoryOrderUpdate {
+  id: string;
+  sortOrder: number;
+  category?: string;
+}
+
 export interface EnterpriseStoryItem {
   id: string;
   projectId: string;
@@ -19,6 +25,7 @@ export interface EnterpriseStoryItem {
   content: string;
   category: string;
   revision: number;
+  sortOrder: number;
   contentHash: string;
   updatedAt: number;
 }
@@ -32,6 +39,7 @@ export interface SaveStoryPayload {
   content: string;
   category: string;
   expectedRevision: number;
+  sortOrder?: number;
   operator: string;
 }
 
@@ -66,11 +74,16 @@ export type FtsSearchResult = FtsResultItem;
 export interface TextMetricsResult {
   wordCount: number;
   charCount: number;
+  paragraphCount: number;
   readingTimeMinutes: number;
   dialogueRatio: number;
   sentenceCadence: number;
   vocabularyRichness: number;
+  fleschReadingEase: number;
+  sentimentTone: string;
   repetitionWarnings: string[];
+  clicheWarnings: string[];
+  pacingTimeline: number[];
 }
 
 export interface TimelineEventItem {
@@ -152,6 +165,7 @@ export interface GraphNodePacked {
   category: string;
   isDivine: boolean;
   mass: number;
+  degree: number;
 }
 
 export interface GraphEdgePacked {
@@ -176,11 +190,13 @@ export interface SemanticSearchResult {
 }
 
 export interface LoreAnomalyItem {
+  id: string;
   entityTitle: string;
   conflictType: string;
   claimInText: string;
   originalLoreFact: string;
-  severity: string;
+  severity: "CRITICAL" | "MAJOR" | "MINOR" | "SUGGESTION" | string;
+  suggestedFix: string;
 }
 
 export interface LoreAnomalyReport {
@@ -229,7 +245,28 @@ export interface WstoryPackage {
   checksum: string;
 }
 
-export type AppTab = "reader" | "studio" | "board" | "codex" | "graph" | "timeline";
+export interface DbStatsPayload {
+  totalStories: number;
+  totalProjects: number;
+  totalRelations: number;
+  totalTimelineEvents: number;
+  dbSizeBytes: number;
+}
+
+export interface AppSettings {
+  editorFontFamily: string;
+  editorLineHeight: number;
+  canvasMaxWidth: string;
+  smoothCaret: boolean;
+  autoSaveIntervalMs: number;
+  loreAuditOnInput: boolean;
+  loreSensitivity: "STRICT" | "BALANCED" | "PERMISSIVE";
+  dailyWordGoal: number;
+  sprintDurationMinutes: number;
+  hapticsEnabled: boolean;
+}
+
+export type AppTab = "reader" | "studio" | "board" | "codex" | "graph" | "timeline" | "settings";
 export type StudioViewMode = "split" | "zen" | "edit" | "preview";
 export type ThemeMode = "obsidian" | "sepia" | "paper" | "oled" | "celestial";
 export type DivineRank = "Демиург" | "Реликвия" | "Святилище" | "Персонаж" | "Акт";

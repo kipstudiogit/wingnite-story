@@ -32,9 +32,11 @@ export function renderMarkdown(rawText: string): string {
 
   processed = processed.replace(/(^|[^\w])@([a-zA-Zа-яА-ЯёЁ0-9_-]+)/g, `$1<span class="md-mention">@$2</span>`);
 
+  let taskCounter = 0;
   processed = processed.replace(/^-\s*\[([ xX])\]\s*(.*)$/gm, (_, check: string, label: string) => {
     const isChecked = check.toLowerCase() === "x";
-    return `<div class="md-task-item"><input type="checkbox" disabled ${isChecked ? "checked" : ""} class="task-check" /><span>${label}</span></div>`;
+    const currentIdx = taskCounter++;
+    return `<div class="md-task-item" data-task-index="${currentIdx}"><input type="checkbox" ${isChecked ? "checked" : ""} class="task-check" data-task-index="${currentIdx}" /><span>${label}</span></div>`;
   });
 
   processed = processed.replace(/(^|\n)(—\s*[^<\n]+)/g, `$1<div class="md-dialogue-line">$2</div>`);
@@ -47,4 +49,14 @@ export function renderMarkdown(rawText: string): string {
   }
 
   return parsed;
+}
+
+export function toggleMarkdownTask(content: string, taskIndex: number): string {
+  let counter = 0;
+  return content.replace(/^-\s*\[([ xX])\]/gm, (match, check) => {
+    if (counter++ === taskIndex) {
+      return check.toLowerCase() === "x" ? "- [ ]" : "- [x]";
+    }
+    return match;
+  });
 }

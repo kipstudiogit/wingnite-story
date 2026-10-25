@@ -1,27 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-
-export interface SemanticSearchResult {
-  id: string;
-  title: string;
-  category: string;
-  similarity: number;
-  snippet: string;
-}
-
-export interface LoreAnomalyItem {
-  entityTitle: string;
-  conflictType: string;
-  claimInText: string;
-  originalLoreFact: string;
-  severity: string;
-}
-
-export interface LoreAnomalyReport {
-  anomalies: LoreAnomalyItem[];
-  verifiedClaimsCount: number;
-  consistencyScore: number;
-}
+import type { LoreAnomalyItem, LoreAnomalyReport, SemanticSearchResult } from "../types";
 
 export function useLoreGuardian() {
   const isAnalyzing = ref<boolean>(false);
@@ -33,7 +12,7 @@ export function useLoreGuardian() {
 
   let verifyDebounce: number | null = null;
 
-  function triggerLoreAuditDebounced(content: string, delayMs = 400) {
+  function triggerLoreAuditDebounced(content: string, projectId?: string, delayMs = 380) {
     if (verifyDebounce) clearTimeout(verifyDebounce);
     if (!content.trim()) {
       anomalies.value = [];
@@ -49,6 +28,7 @@ export function useLoreGuardian() {
       try {
         const report = await invoke<LoreAnomalyReport>("lore_verify_consistency", {
           activeContent: content,
+          projectId: projectId || null,
         });
 
         anomalies.value = report.anomalies;
@@ -71,7 +51,7 @@ export function useLoreGuardian() {
     }
   }
 
-  async function executeSemanticSearch(query: string, limit = 6): Promise<void> {
+  async function executeSemanticSearch(query: string, projectId?: string, limit = 8): Promise<void> {
     if (!query.trim()) {
       semanticResults.value = [];
       return;
@@ -83,6 +63,7 @@ export function useLoreGuardian() {
     try {
       const results = await invoke<SemanticSearchResult[]>("lore_semantic_search", {
         query,
+        projectId: projectId || null,
         limit,
       });
       semanticResults.value = results;
@@ -98,7 +79,7 @@ export function useLoreGuardian() {
     const next = [...anomalies.value];
     next.splice(index, 1);
     anomalies.value = next;
-    const penalty = Math.min(100, next.length * 15);
+    const penalty = Math.min(100, next.length * 14);
     consistencyScore.value = Math.max(0, 100 - penalty);
   }
 

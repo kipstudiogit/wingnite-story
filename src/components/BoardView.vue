@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import type { StoryItem } from "../types";
+import { computed } from "vue";
+import type { StoryItem, StoryOrderUpdate } from "../types";
+import { useHaptics } from "../composables/useHaptics";
 
 const { actsList, stories } = defineProps<{
   actsList: string[];
@@ -10,7 +11,10 @@ const { actsList, stories } = defineProps<{
 const emit = defineEmits<{
   (e: "select", story: StoryItem): void;
   (e: "create", category: string): void;
+  (e: "reorder", updates: StoryOrderUpdate[]): void;
 }>();
+
+const { vibrateLight, vibrateSelection, vibrateSuccess } = useHaptics();
 
 interface ProcessedStoryItem extends StoryItem {
   wordCount: number;
@@ -57,22 +61,48 @@ const storiesByAct = computed(() => {
       });
     }
   }
+  for (const list of map.values()) {
+    list.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
   return map;
 });
 
-const mousePositions = ref<Map<string, { x: number; y: number }>>(new Map());
+function moveCardUp(act: string, index: number) {
+  const list = storiesByAct.value.get(act);
+  if (!list || index <= 0) return;
+  const itemA = list[index];
+  const itemB = list[index - 1];
 
-function handleCardMouseMove(id: string, e: MouseEvent) {
-  const el = e.currentTarget as HTMLElement;
-  const rect = el.getBoundingClientRect();
-  mousePositions.value.set(id, {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top,
-  });
+  const updates: StoryOrderUpdate[] = [
+    { id: itemA.id, sortOrder: itemB.sortOrder, category: act },
+    { id: itemB.id, sortOrder: itemA.sortOrder, category: act },
+  ];
+  vibrateSuccess();
+  emit("reorder", updates);
 }
 
-function handleCardMouseLeave(id: string) {
-  mousePositions.value.delete(id);
+function moveCardDown(act: string, index: number) {
+  const list = storiesByAct.value.get(act);
+  if (!list || index >= list.length - 1) return;
+  const itemA = list[index];
+  const itemB = list[index + 1];
+
+  const updates: StoryOrderUpdate[] = [
+    { id: itemA.id, sortOrder: itemB.sortOrder, category: act },
+    { id: itemB.id, sortOrder: itemA.sortOrder, category: act },
+  ];
+  vibrateSuccess();
+  emit("reorder", updates);
+}
+
+function handleActMove(story: StoryItem, targetAct: string) {
+  const targetList = storiesByAct.value.get(targetAct) || [];
+  const maxOrder = targetList.reduce((max, s) => Math.max(max, s.sortOrder), 0);
+  const updates: StoryOrderUpdate[] = [
+    { id: story.id, sortOrder: maxOrder + 1, category: targetAct },
+  ];
+  vibrateSuccess();
+  emit("reorder", updates);
 }
 </script>
 
@@ -87,44 +117,65 @@ function handleCardMouseLeave(id: string) {
           </div>
           <div class="act-header-right">
             <span class="act-badge-counter">{{ storiesByAct.get(act)?.length ?? 0 }}</span>
-            <button class="btn-act-add" title="Добавить сцену в этот акт" @click="emit('create', act)">+</button>
+            <button class="btn-act-add" title="Добавить сцену в этот акт" @click="vibrateLight(); emit('create', act)">+</button>
           </div>
         </header>
 
         <div class="act-cards-scroller">
           <div
-            v-for="item in (storiesByAct.get(act) ?? [])"
+            v-for="(item, idx) in (storiesByAct.get(act) ?? [])"
             :key="item.id"
             class="prismatic-card"
-            :style="{
-              '--card-glow-x': `${mousePositions.get(item.id)?.x ?? 150}px`,
-              '--card-glow-y': `${mousePositions.get(item.id)?.y ?? 80}px`
-            }"
-            @mousemove="handleCardMouseMove(item.id, $event)"
-            @mouseleave="handleCardMouseLeave(item.id)"
-            @click="emit('select', item)"
+            @click="vibrateSelection(); emit('select', item)"
           >
-            <div class="card-radial-spotlight"></div>
-
             <div class="card-top-meta">
               <span class="card-act-tag">{{ item.category }}</span>
-              <span class="card-words-tag">{{ item.wordCount }} сл.</span>
+              <div class="card-reorder-pills" @click.stop>
+                <button
+                  class="btn-order-arrow"
+                  :disabled="idx === 0"
+                  title="Поднять выше"
+                  @click="moveCardUp(act, idx)"
+                >
+                  ▲
+                </button>
+                <button
+                  class="btn-order-arrow"
+                  :disabled="idx === (storiesByAct.get(act)?.length ?? 0) - 1"
+                  title="Опустить ниже"
+                  @click="moveCardDown(act, idx)"
+                >
+                  ▼
+                </button>
+              </div>
             </div>
 
-            <h4 class="card-heading">{{ item.title }}</h4>
-            <p class="card-snippet">{{ item.excerpt }}...</p>
+            <h4 class="card-heading">{{ item.title || 'Сцена без названия' }}</h4>
+            <p class="card-snippet">{{ item.excerpt || 'Текст сцены...' }}...</p>
 
             <div class="card-bottom-telemetry">
               <div class="card-meter-track">
                 <div class="card-meter-fill" :style="{ width: `${item.progressPercent}%` }"></div>
               </div>
-              <span class="card-meter-label">{{ item.progressPercent }}% нормы</span>
+              <span class="card-meter-label">{{ item.wordCount }} сл.</span>
+            </div>
+
+            <div class="card-mobile-act-mover" @click.stop>
+              <select
+                class="select-act-shift"
+                :value="item.category"
+                @change="handleActMove(item, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="targetAct in resolvedActs" :key="targetAct" :value="targetAct">
+                  Переместить: {{ targetAct }}
+                </option>
+              </select>
             </div>
           </div>
 
           <div v-if="(storiesByAct.get(act) ?? []).length === 0" class="empty-column-box">
             <p>Нет сцен в блоке</p>
-            <button class="btn-create-card-inline" @click="emit('create', act)">+ Новая сцена</button>
+            <button class="btn-create-card-inline" @click="vibrateLight(); emit('create', act)">+ Новая сцена</button>
           </div>
         </div>
       </div>
@@ -149,10 +200,9 @@ function handleCardMouseLeave(id: string) {
 
 .board-act-column {
   width: 350px;
-  background: var(--panel);
-  backdrop-filter: blur(40px) saturate(220%);
+  background: var(--bg-surface-solid);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-ambient), var(--specular);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   border-radius: 18px;
   display: flex;
   flex-direction: column;
@@ -180,14 +230,13 @@ function handleCardMouseLeave(id: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 14px var(--accent-glow), 0 0 4px #fff;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 14px var(--accent-cyan-glow);
 }
 
 .act-name {
   font-size: 14px;
   font-weight: 800;
-  letter-spacing: -0.015em;
   color: var(--text-main);
 }
 
@@ -198,7 +247,7 @@ function handleCardMouseLeave(id: string) {
 }
 
 .act-badge-counter {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   padding: 3px 10px;
   border-radius: 999px;
@@ -213,8 +262,8 @@ function handleCardMouseLeave(id: string) {
   border: none;
   color: #fff;
   border-radius: 6px;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   font-weight: 800;
   cursor: pointer;
   display: flex;
@@ -231,73 +280,76 @@ function handleCardMouseLeave(id: string) {
 }
 
 .prismatic-card {
-  position: relative;
-  background: var(--card);
-  backdrop-filter: blur(20px);
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-card), var(--specular-prismatic);
   border-radius: 14px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.card-radial-spotlight {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(280px circle at var(--card-glow-x, 150px) var(--card-glow-y, 80px), rgba(255, 255, 255, 0.08), transparent 70%);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-}
-
-.prismatic-card:hover .card-radial-spotlight {
-  opacity: 1;
+  gap: 8px;
+  transition: all 0.2s ease;
 }
 
 .prismatic-card:hover {
-  transform: translateY(-4px) scale(1.015);
-  background: var(--card-hover);
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-card-hover);
+  border-color: var(--border-accent);
+  transform: translateY(-2px);
 }
 
 .card-top-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .card-act-tag {
-  color: var(--accent-light);
+  color: var(--accent-cyan);
   text-transform: uppercase;
   letter-spacing: 0.07em;
   font-size: 10px;
+  font-weight: 800;
 }
 
-.card-words-tag {
-  color: var(--text-dark);
-  font-family: var(--font-mono);
+.card-reorder-pills {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-order-arrow {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  width: 24px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-order-arrow:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-order-arrow:not(:disabled):hover {
+  background: var(--accent-indigo);
+  color: #fff;
 }
 
 .card-heading {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-main);
+  color: var(--text-pure);
   line-height: 1.35;
 }
 
 .card-snippet {
   font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .card-bottom-telemetry {
@@ -310,24 +362,38 @@ function handleCardMouseLeave(id: string) {
 .card-meter-track {
   flex: 1;
   height: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-subtle);
   border-radius: 999px;
   overflow: hidden;
 }
 
 .card-meter-fill {
   height: 100%;
-  background: var(--accent-gradient);
-  box-shadow: 0 0 10px var(--accent-glow);
-  border-radius: 999px;
-  transition: width 0.4s ease;
+  background: linear-gradient(90deg, var(--accent-indigo) 0%, var(--accent-cyan) 100%);
 }
 
 .card-meter-label {
   font-size: 10px;
-  font-weight: 600;
   font-family: var(--font-mono);
-  color: var(--text-dark);
+  color: var(--text-dim);
+}
+
+.card-mobile-act-mover {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.select-act-shift {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 6px;
+  outline: none;
+  cursor: pointer;
 }
 
 .empty-column-box {

@@ -1,9 +1,12 @@
 import { ref, computed } from "vue";
+import { useAppSettings } from "./useAppSettings";
 
 export function useSprint(getCurrentWordCount: () => number) {
+  const { settings } = useAppSettings();
+
   const sprintActive = ref<boolean>(false);
   const sprintStartWords = ref<number>(0);
-  const sprintSeconds = ref<number>(900);
+  const sprintSeconds = ref<number>(settings.value.sprintDurationMinutes * 60);
   let sprintTimerInterval: number | null = null;
 
   const sprintDelta = computed(() => {
@@ -24,7 +27,7 @@ export function useSprint(getCurrentWordCount: () => number) {
     } else {
       sprintActive.value = true;
       sprintStartWords.value = getCurrentWordCount();
-      sprintSeconds.value = 900;
+      sprintSeconds.value = Math.max(60, settings.value.sprintDurationMinutes * 60);
       sprintTimerInterval = window.setInterval(() => {
         if (sprintSeconds.value > 0) {
           sprintSeconds.value--;

@@ -152,6 +152,7 @@ pub async fn rope_flush_to_storage(
         content,
         category,
         expected_revision: 0,
+        sort_order: None,
         operator,
     };
 
