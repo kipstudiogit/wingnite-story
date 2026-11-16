@@ -1,24 +1,16 @@
-pub mod analytics_commands;
-pub mod db;
-pub mod db_commands;
-pub mod error;
-pub mod export_commands;
-pub mod graph_engine;
-pub mod lore_guardian;
-pub mod lsp;
-pub mod models;
-pub mod project_commands;
-pub mod rope_engine;
-pub mod story_commands;
-pub mod timeline_commands;
-pub mod updater_commands;
-pub mod vault;
-pub mod wstory_commands;
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
 
+pub mod commands;
+pub mod db;
+pub mod error;
+pub mod models;
+pub mod services;
+
+pub use commands::rope::RopeStateManager;
 pub use db::EnterpriseDbPool;
 pub use error::AppError;
 pub use models::*;
-pub use rope_engine::RopeStateManager;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,6 +20,8 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -44,53 +38,53 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            vault::vault_get_status,
-            vault::vault_seal_project,
-            vault::vault_verify_merkle_tree,
-            rope_engine::rope_init_session,
-            rope_engine::rope_get_viewport,
-            rope_engine::rope_apply_delta,
-            rope_engine::rope_flush_to_storage,
-            project_commands::fetch_projects,
-            project_commands::mutate_project,
-            project_commands::delete_project,
-            db_commands::app_checkpoint_wal,
-            db_commands::app_vacuum_db,
-            db_commands::app_get_db_stats,
-            export_commands::compile_book_edition,
-            export_commands::export_manuscript,
-            export_commands::export_manuscript_txt,
-            export_commands::import_plain_text_chapters,
-            analytics_commands::analyze_text_metrics,
-            analytics_commands::execute_fts_search,
-            analytics_commands::stream_audit_trail,
-            analytics_commands::generate_twist,
-            story_commands::fetch_stories,
-            story_commands::get_stories,
-            story_commands::mutate_story,
-            story_commands::save_story,
-            story_commands::delete_story,
-            story_commands::reorder_stories,
-            wstory_commands::save_export_file,
-            wstory_commands::export_project_wstory,
-            wstory_commands::import_project_wstory,
-            updater_commands::check_application_update,
-            updater_commands::install_application_update,
-            timeline_commands::fetch_timeline_events,
-            timeline_commands::mutate_timeline_event,
-            timeline_commands::delete_timeline_event,
-            timeline_commands::fetch_entity_relations,
-            timeline_commands::mutate_entity_relation,
-            timeline_commands::delete_entity_relation,
-            lsp::lsp_complete_wikilink,
-            lsp::lsp_hover_entity,
-            lsp::lsp_resolve_wikilink,
-            graph_engine::fetch_packed_topology,
-            lore_guardian::lore_clear_embeddings_cache,
-            lore_guardian::lore_index_story,
-            lore_guardian::lore_semantic_search,
-            lore_guardian::lore_verify_consistency
+            commands::vault::vault_get_status,
+            commands::vault::vault_seal_project,
+            commands::vault::vault_unlock_project,
+            commands::vault::vault_verify_merkle_tree,
+            commands::vault::fetch_story_snapshots,
+            commands::vault::create_story_snapshot,
+            commands::vault::delete_story_snapshot,
+            commands::rope::rope_init_session,
+            commands::rope::rope_get_viewport,
+            commands::rope::rope_apply_delta,
+            commands::rope::rope_close_session,
+            commands::rope::rope_flush_to_storage,
+            commands::project::fetch_projects,
+            commands::project::mutate_project,
+            commands::project::delete_project,
+            commands::db::app_checkpoint_wal,
+            commands::db::app_vacuum_db,
+            commands::db::app_get_db_stats,
+            commands::export::compile_book_edition,
+            commands::export::export_manuscript,
+            commands::export::export_manuscript_txt,
+            commands::export::import_plain_text_chapters,
+            commands::analytics::analyze_text_metrics,
+            commands::analytics::generate_twist,
+            commands::story::fetch_stories,
+            commands::story::mutate_story,
+            commands::story::delete_story,
+            commands::story::reorder_stories,
+            commands::story::execute_fts_search,
+            commands::wstory::save_export_file,
+            commands::wstory::export_project_wstory,
+            commands::wstory::import_project_wstory,
+            commands::updater::check_application_update,
+            commands::updater::install_application_update,
+            commands::timeline::fetch_timeline_events,
+            commands::timeline::mutate_timeline_event,
+            commands::timeline::delete_timeline_event,
+            commands::timeline::fetch_entity_relations,
+            commands::timeline::mutate_entity_relation,
+            commands::timeline::delete_entity_relation,
+            commands::lsp::lsp_complete_wikilink,
+            commands::lsp::lsp_hover_entity,
+            commands::lsp::lsp_resolve_wikilink,
+            commands::graph::fetch_packed_topology,
+            commands::lore::lore_semantic_search,
+            commands::lore::lore_verify_consistency
         ])
         .run(tauri::generate_context!())
-        .expect("Fatal error during Enterprise Runtime execution");
+        .expect("Fatal error during Wingnite runtime execution");
 }

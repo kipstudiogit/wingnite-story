@@ -1,9 +1,13 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import type { LoreAnomalyItem, SemanticSearchResult } from "../../types";
+import { useI18n } from "../../i18n";
 
-const { consistencyScore, anomalies, semanticResults, isAnalyzing } = defineProps<{
+const { consistencyScore, verifiedClaimsCount, anomalies, semanticResults, isAnalyzing } = defineProps<{
   consistencyScore: number;
+  verifiedClaimsCount: number;
   anomalies: LoreAnomalyItem[];
   semanticResults: SemanticSearchResult[];
   isAnalyzing: boolean;
@@ -16,6 +20,8 @@ const emit = defineEmits<{
   (e: "selectStoryById", storyId: string): void;
 }>();
 
+const { t } = useI18n();
+
 const semanticQuery = ref("");
 const selectedFilter = ref<"ALL" | "CRITICAL" | "MAJOR" | "MINOR">("ALL");
 
@@ -23,6 +29,13 @@ const filteredAnomalies = computed(() => {
   if (selectedFilter.value === "ALL") return anomalies;
   return anomalies.filter((a) => a.severity.toUpperCase() === selectedFilter.value);
 });
+
+function handleDismiss(anom: LoreAnomalyItem) {
+  const realIndex = anomalies.indexOf(anom);
+  if (realIndex !== -1) {
+    emit("dismissAnomaly", realIndex);
+  }
+}
 
 function handleSearch() {
   emit("searchSemantic", semanticQuery.value);
@@ -34,14 +47,14 @@ function handleSearch() {
     <header class="drawer-header-strip">
       <div class="header-left">
         <span class="lore-sigil-orb">◈</span>
-        <h4>Страж Канона и Lore-Матрица</h4>
+        <h4>{{ t("lore.title") }}</h4>
       </div>
       <button class="btn-drawer-exit" @click="emit('close')">✕</button>
     </header>
 
     <div class="lore-score-widget">
       <div class="widget-head">
-        <span>Каноническая согласованность</span>
+        <span>{{ t("lore.scoreLabel") }}</span>
         <b :class="{ warning: consistencyScore < 80, danger: consistencyScore < 50 }">
           {{ Math.round(consistencyScore) }}%
         </b>
@@ -50,8 +63,8 @@ function handleSearch() {
         <div class="score-bar" :style="{ width: `${consistencyScore}%` }"></div>
       </div>
       <div class="score-meta">
-        <span>Проверено предикатов: {{ anomalies.length ? anomalies.length * 4 + 12 : 36 }}</span>
-        <span class="meta-status">{{ anomalies.length === 0 ? 'Парадоксов нет' : 'Требует внимания' }}</span>
+        <span>{{ t("lore.checkedPredicates", { count: verifiedClaimsCount }) }}</span>
+        <span class="meta-status">{{ anomalies.length === 0 ? t("lore.noParadoxes") : t("lore.needsAttention") }}</span>
       </div>
     </div>
 
@@ -60,25 +73,25 @@ function handleSearch() {
         :class="['filter-chip', { active: selectedFilter === 'ALL' }]"
         @click="selectedFilter = 'ALL'"
       >
-        Все ({{ anomalies.length }})
+        {{ t("lore.filters.all", { count: anomalies.length }) }}
       </button>
       <button
         :class="['filter-chip critical', { active: selectedFilter === 'CRITICAL' }]"
         @click="selectedFilter = 'CRITICAL'"
       >
-        Критические
+        {{ t("lore.filters.critical") }}
       </button>
       <button
         :class="['filter-chip major', { active: selectedFilter === 'MAJOR' }]"
         @click="selectedFilter = 'MAJOR'"
       >
-        Мажорные
+        {{ t("lore.filters.major") }}
       </button>
       <button
         :class="['filter-chip minor', { active: selectedFilter === 'MINOR' }]"
         @click="selectedFilter = 'MINOR'"
       >
-        Минорные
+        {{ t("lore.filters.minor") }}
       </button>
     </div>
 
@@ -89,43 +102,43 @@ function handleSearch() {
             <span class="severity-tag">{{ anom.severity }}</span>
             <span class="anom-title">{{ anom.entityTitle }}</span>
           </div>
-          <button class="btn-dismiss-anom" title="Принять отклонение" @click="emit('dismissAnomaly', i)">✕</button>
+          <button class="btn-dismiss-anom" :title="t('common.accept')" @click="handleDismiss(anom)">✕</button>
         </div>
 
         <div class="anom-conflict">{{ anom.conflictType }}</div>
-        
+
         <div class="anom-diff-box">
           <div class="diff-line text-claim">
-            <span class="diff-prefix">− Текст:</span>
+            <span class="diff-prefix">{{ t("lore.textPrefix") }}</span>
             <span>{{ anom.claimInText }}</span>
           </div>
           <div class="diff-line lore-fact">
-            <span class="diff-prefix">+ Канон:</span>
+            <span class="diff-prefix">{{ t("lore.canonPrefix") }}</span>
             <span>{{ anom.originalLoreFact }}</span>
           </div>
         </div>
 
         <div v-if="anom.suggestedFix" class="anom-fix">
-          <span class="fix-label">Совет стража:</span> {{ anom.suggestedFix }}
+          <span class="fix-label">{{ t("lore.suggestionLabel") }}</span> {{ anom.suggestedFix }}
         </div>
       </div>
 
       <div v-if="filteredAnomalies.length === 0" class="anom-empty">
         <span class="empty-icon">✓</span>
-        <span>{{ isAnalyzing ? 'Анализ канона и графа связей...' : 'Противоречий и парадоксов не обнаружено' }}</span>
+        <span>{{ isAnalyzing ? t("lore.analyzing") : t("lore.cleanState") }}</span>
       </div>
     </div>
 
     <div class="lore-semantic-box">
-      <div class="feed-heading">Гибридный векторный Lore-поиск</div>
+      <div class="feed-heading">{{ t("lore.semanticTitle") }}</div>
       <div class="semantic-search-row">
         <input
           v-model="semanticQuery"
           class="semantic-input"
-          placeholder="Поиск по скрытому смыслу и предикатам..."
+          :placeholder="t('lore.semanticPlaceholder')"
           @keydown.enter="handleSearch"
         />
-        <button class="btn-semantic-go" @click="handleSearch">Найти</button>
+        <button class="btn-semantic-go" @click="handleSearch">{{ t("lore.searchBtn") }}</button>
       </div>
 
       <div class="semantic-results-feed">
@@ -137,10 +150,10 @@ function handleSearch() {
         >
           <div class="res-top">
             <span class="res-title">{{ res.title }}</span>
-            <span class="res-sim">{{ Math.round(res.similarity * 100) }}% RRF</span>
+            <span class="res-sim">{{ Math.round(res.similarity * 100) }}%</span>
           </div>
           <div class="res-snippet">{{ res.snippet }}</div>
-          <span class="res-open-hint">Перейти к сцене →</span>
+          <span class="res-open-hint">{{ t("lore.jumpToScene") }}</span>
         </div>
       </div>
     </div>
@@ -149,7 +162,7 @@ function handleSearch() {
 
 <style scoped>
 .lore-drawer {
-  width: 370px;
+  width: min(100%, 370px);
   background: var(--bg-surface-solid);
   border-left: 1px solid var(--border);
   display: flex;
@@ -162,7 +175,8 @@ function handleSearch() {
   bottom: 0;
   z-index: 35;
   overflow-y: auto;
-  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.6);
+  overscroll-behavior-y: contain;
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.45);
 }
 
 .drawer-header-strip {
@@ -189,11 +203,14 @@ function handleSearch() {
 }
 
 .btn-drawer-exit {
-  background: transparent;
-  border: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .lore-score-widget {
@@ -255,7 +272,7 @@ function handleSearch() {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  padding: 3px 8px;
+  padding: 5px 8px;
   border-radius: 6px;
   font-size: 10px;
   font-weight: 700;
@@ -406,12 +423,13 @@ function handleSearch() {
 
 .semantic-input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-pure);
   border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: 8px 10px;
+  font-size: 12px;
   outline: none;
 }
 
@@ -469,5 +487,13 @@ function handleSearch() {
   font-size: 9px;
   color: var(--accent-cyan);
   font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .lore-drawer {
+    width: 100%;
+    border-left: none;
+    border-radius: 14px;
+  }
 }
 </style>

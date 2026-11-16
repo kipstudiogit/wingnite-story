@@ -6,6 +6,8 @@
   "platforms": ["android", "iOS"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "dialog:default",
+    "fs:default"
   ]
 }

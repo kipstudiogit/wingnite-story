@@ -1,6 +1,9 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import MobileDrawerSheet from "./MobileDrawerSheet.vue";
-import type { EnterpriseStoryItem, StoryOrderUpdate } from "../../types";
+import type { EnterpriseStoryItem } from "../../types";
+import { useI18n } from "../../i18n";
 
 const {
   isOpen,
@@ -22,50 +25,44 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "selectStory", story: EnterpriseStoryItem): void;
   (e: "newDraft"): void;
-  (e: "reorder", updates: StoryOrderUpdate[]): void;
+  (e: "swap", idA: string, idB: string): void;
 }>();
+
+const { t, formatNumber } = useI18n();
 
 function moveUp(index: number) {
   if (index <= 0) return;
-  const a = stories[index];
-  const b = stories[index - 1];
-  emit("reorder", [
-    { id: a.id, sortOrder: b.sortOrder, category: a.category },
-    { id: b.id, sortOrder: a.sortOrder, category: b.category },
-  ]);
+  emit("swap", stories[index].id, stories[index - 1].id);
 }
 
 function moveDown(index: number) {
   if (index >= stories.length - 1) return;
-  const a = stories[index];
-  const b = stories[index + 1];
-  emit("reorder", [
-    { id: a.id, sortOrder: b.sortOrder, category: a.category },
-    { id: b.id, sortOrder: a.sortOrder, category: b.category },
-  ]);
+  emit("swap", stories[index].id, stories[index + 1].id);
 }
 </script>
 
 <template>
   <MobileDrawerSheet
     :is-open="isOpen"
-    title="Оглавление книги"
+    :title="t('mobile.chaptersTitle')"
     @close="emit('close')"
   >
     <div class="mobile-toc-container">
       <div class="mobile-toc-progress-card">
         <div class="meter-info">
-          <span>Прогресс произведения</span>
+          <span>{{ t("mobile.bookProgress") }}</span>
           <span>{{ goalPercent }}%</span>
         </div>
         <div class="meter-track">
           <div class="meter-fill" :style="{ width: `${goalPercent}%` }"></div>
         </div>
-        <div class="meter-sub">{{ totalSystemWords }} из {{ targetBookGoal }} слов</div>
+        <div class="meter-sub">
+          {{ t("mobile.wordsOfGoal", { current: formatNumber(totalSystemWords), goal: formatNumber(targetBookGoal) }) }}
+        </div>
       </div>
 
       <button class="mobile-btn-create-draft" @click="emit('newDraft')">
-        + Создать новую сцену
+        {{ t("mobile.createSceneBtn") }}
       </button>
 
       <div class="mobile-chapters-list">
@@ -77,7 +74,7 @@ function moveDown(index: number) {
         >
           <span class="mobile-idx">{{ String(idx + 1).padStart(2, "0") }}</span>
           <div class="mobile-chap-details">
-            <h4>{{ item.title || 'Сцена без названия' }}</h4>
+            <h4>{{ item.title || t("common.untitled") }}</h4>
             <span>{{ item.category }} • r{{ item.revision }}</span>
           </div>
           <div class="reorder-controls-mobile" @click.stop>
@@ -136,6 +133,7 @@ function moveDown(index: number) {
   border: none;
   color: #fff;
   border-radius: 12px;
+  min-height: 44px;
   padding: 12px;
   font-weight: 800;
   font-size: 13px;
@@ -172,7 +170,7 @@ function moveDown(index: number) {
 
 .mobile-chap-details {
   flex: 1;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .mobile-chap-details h4 {
@@ -192,17 +190,17 @@ function moveDown(index: number) {
 .reorder-controls-mobile {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .btn-reorder-touch {
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  width: 28px;
-  height: 22px;
+  width: 34px;
+  height: 26px;
   border-radius: 6px;
-  font-size: 9px;
+  font-size: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;

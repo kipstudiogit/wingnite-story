@@ -1,14 +1,19 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import type { UpdateStatusPayload } from "../../types";
+import { useI18n } from "../../i18n";
 
 const {
   exportNotification,
+  notificationType = "success",
   plotTwist,
   updateAvailable,
   updateInfo,
   isInstallingUpdate,
 } = defineProps<{
   exportNotification: string | null;
+  notificationType?: "success" | "error";
   plotTwist: string;
   updateAvailable: boolean;
   updateInfo: UpdateStatusPayload | null;
@@ -22,6 +27,8 @@ const emit = defineEmits<{
   (e: "installUpdate"): void;
   (e: "dismissUpdate"): void;
 }>();
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -29,7 +36,7 @@ const emit = defineEmits<{
     <div
       v-if="exportNotification"
       class="export-toast-banner"
-      :class="{ error: exportNotification.startsWith('Ошибка') }"
+      :class="{ error: notificationType === 'error' }"
     >
       <span>{{ exportNotification }}</span>
       <button class="toast-close" @click="emit('closeToast')">✕</button>
@@ -39,8 +46,12 @@ const emit = defineEmits<{
       <div class="update-ribbon-left">
         <span class="ribbon-sparkle">✦</span>
         <div class="ribbon-text-col">
-          <span class="ribbon-title">Доступно обновление Wingnite Story {{ updateInfo.version }}</span>
-          <span class="ribbon-sub">{{ updateInfo.body || 'Новые функции, оптимизации и исправления' }}</span>
+          <span class="ribbon-title">
+            {{ t("notifications.updateTitle", { version: updateInfo.version || "" }) }}
+          </span>
+          <span class="ribbon-sub">
+            {{ updateInfo.body || t("notifications.updateDefaultBody") }}
+          </span>
         </div>
       </div>
       <div class="update-ribbon-right">
@@ -49,17 +60,19 @@ const emit = defineEmits<{
           :disabled="isInstallingUpdate"
           @click="emit('installUpdate')"
         >
-          {{ isInstallingUpdate ? 'Установка...' : 'Обновить и перезапустить' }}
+          {{ isInstallingUpdate ? t("common.loading") : t("notifications.installAndRestart") }}
         </button>
         <button class="btn-ribbon-close" @click="emit('dismissUpdate')">✕</button>
       </div>
     </div>
 
     <div v-if="plotTwist" class="twist-banner">
-      <div class="twist-tag">ТВИСТ</div>
+      <div class="twist-tag">{{ t("notifications.twistBadge") }}</div>
       <p class="twist-text">{{ plotTwist }}</p>
       <div class="twist-action-row">
-        <button class="twist-insert-btn" @click="emit('insertTwist')">Вставить</button>
+        <button class="twist-insert-btn" @click="emit('insertTwist')">
+          {{ t("notifications.insertTwist") }}
+        </button>
         <button class="twist-dismiss" @click="emit('dismissTwist')">✕</button>
       </div>
     </div>

@@ -1,15 +1,21 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_PROJECT_ID } from "../constants/app";
 import type { ProjectItem, SaveProjectPayload } from "../types";
 import { useHaptics } from "./useHaptics";
+import { useI18n } from "../i18n";
 
 const projects = ref<ProjectItem[]>([]);
-const activeProjectId = ref<string>("default_project");
+const activeProjectId = ref<string>(DEFAULT_PROJECT_ID);
 const isProjectSyncing = ref(false);
 const projectError = ref<string | null>(null);
 
 export function useProjects() {
   const { vibrateSuccess, vibrateWarning } = useHaptics();
+  const { t } = useI18n();
 
   const activeProject = computed(() =>
     projects.value.find((p) => p.id === activeProjectId.value)
@@ -32,8 +38,8 @@ export function useProjects() {
     projectError.value = null;
     try {
       const payload: SaveProjectPayload = {
-        title: title.trim() || "Новое произведение",
-        description: description.trim() || "Архивная книга",
+        title: title.trim() || t("projects.defaultTitle"),
+        description: description.trim() || t("projects.defaultDescription"),
       };
       const saved = await invoke<ProjectItem>("mutate_project", { payload });
       projects.value.unshift(saved);
@@ -49,9 +55,38 @@ export function useProjects() {
     }
   }
 
+  async function updateProject(
+    id: string,
+    title: string,
+    description: string
+  ): Promise<ProjectItem | null> {
+    isProjectSyncing.value = true;
+    projectError.value = null;
+    try {
+      const payload: SaveProjectPayload = {
+        id,
+        title: title.trim() || t("projects.defaultTitle"),
+        description: description.trim() || t("projects.defaultDescription"),
+      };
+      const updated = await invoke<ProjectItem>("mutate_project", { payload });
+      const idx = projects.value.findIndex((p) => p.id === updated.id);
+      if (idx !== -1) {
+        projects.value[idx] = updated;
+      }
+      vibrateSuccess();
+      return updated;
+    } catch (err) {
+      projectError.value = String(err);
+      vibrateWarning();
+      return null;
+    } finally {
+      isProjectSyncing.value = false;
+    }
+  }
+
   async function deleteActiveProject(id: string): Promise<boolean> {
     if (projects.value.length <= 1) {
-      projectError.value = "Нельзя удалить единственное оставшееся произведение.";
+      projectError.value = t("errors.projectDeleteLast");
       vibrateWarning();
       return false;
     }
@@ -61,7 +96,7 @@ export function useProjects() {
     try {
       await invoke("delete_project", { id });
       projects.value = projects.value.filter((p) => p.id !== id);
-      activeProjectId.value = projects.value[0]?.id || "default_project";
+      activeProjectId.value = projects.value[0]?.id || DEFAULT_PROJECT_ID;
       vibrateSuccess();
       return true;
     } catch (err) {
@@ -86,6 +121,7 @@ export function useProjects() {
     projectError,
     loadSystemProjects,
     createProject,
+    updateProject,
     deleteActiveProject,
     switchProject,
   };

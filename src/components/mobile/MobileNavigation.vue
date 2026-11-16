@@ -1,6 +1,9 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { computed } from "vue";
 import type { AppTab } from "../../types";
+import { useI18n } from "../../i18n";
 
 const currentTab = defineModel<AppTab>("currentTab", { required: true });
 
@@ -15,8 +18,10 @@ const emit = defineEmits<{
   (e: "toggleSprint"): void;
 }>();
 
+const { t } = useI18n();
+
 const sprintDisplayLabel = computed(() =>
-  sprintActive ? sprintFormattedTime : "Спринт"
+  sprintActive ? sprintFormattedTime : t("mobile.sprintTab")
 );
 </script>
 
@@ -32,7 +37,7 @@ const sprintDisplayLabel = computed(() =>
         <path d="M2 2l7.586 7.586"/>
         <circle cx="11" cy="11" r="2"/>
       </svg>
-      <span class="dock-label">Студия</span>
+      <span class="dock-label">{{ t("mobile.studioTab") }}</span>
     </button>
 
     <button
@@ -43,7 +48,7 @@ const sprintDisplayLabel = computed(() =>
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
       </svg>
-      <span class="dock-label">Книга</span>
+      <span class="dock-label">{{ t("mobile.readerTab") }}</span>
     </button>
 
     <button
@@ -55,7 +60,7 @@ const sprintDisplayLabel = computed(() =>
         <line x1="9" y1="3" x2="9" y2="21"/>
         <line x1="15" y1="3" x2="15" y2="21"/>
       </svg>
-      <span class="dock-label">Канбан</span>
+      <span class="dock-label">{{ t("mobile.boardTab") }}</span>
     </button>
 
     <button
@@ -65,7 +70,7 @@ const sprintDisplayLabel = computed(() =>
       <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
       </svg>
-      <span class="dock-label">Реестр</span>
+      <span class="dock-label">{{ t("mobile.codexTab") }}</span>
     </button>
 
     <button
@@ -84,7 +89,7 @@ const sprintDisplayLabel = computed(() =>
         <circle cx="19" cy="12" r="1"/>
         <circle cx="5" cy="12" r="1"/>
       </svg>
-      <span class="dock-label">Меню</span>
+      <span class="dock-label">{{ t("mobile.menuTab") }}</span>
     </button>
   </nav>
 </template>
@@ -93,15 +98,15 @@ const sprintDisplayLabel = computed(() =>
 .mobile-bottom-dock {
   display: flex;
   align-items: center;
-  justify-content: space-around;
-  background: rgba(6, 9, 16, 0.96);
-  backdrop-filter: blur(28px) saturate(200%);
+  justify-content: space-between;
+  background: var(--bg-surface-solid);
   border-top: 1px solid var(--border);
-  padding: 6px 4px max(10px, env(safe-area-inset-bottom)) 4px;
+  padding: 6px max(6px, var(--safe-right)) max(10px, var(--safe-bottom)) max(6px, var(--safe-left));
+  gap: 2px;
   position: relative;
   z-index: 100;
   flex-shrink: 0;
-  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
 }
 
 .mobile-dock-item {
@@ -113,8 +118,10 @@ const sprintDisplayLabel = computed(() =>
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 48px;
+  flex: 1;
+  min-width: 0;
   height: 48px;
+  padding: 0 2px;
   cursor: pointer;
   border-radius: 12px;
   transition: all 0.15s ease;
@@ -124,15 +131,17 @@ const sprintDisplayLabel = computed(() =>
 
 .mobile-dock-item:active {
   transform: scale(0.92);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
 }
 
 .mobile-dock-item.active {
-  color: var(--accent-cyan);
+  color: var(--accent-indigo);
+  background: var(--bg-card);
 }
 
 .sprint-action-btn.active {
-  color: #fef08a;
+  color: var(--accent-gold);
+  background: var(--bg-card);
 }
 
 .icon-lightning {
@@ -147,5 +156,19 @@ const sprintDisplayLabel = computed(() =>
   font-size: 10px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 360px) {
+  .dock-label {
+    font-size: 9px;
+  }
+
+  .mobile-dock-item {
+    height: 44px;
+  }
 }
 </style>

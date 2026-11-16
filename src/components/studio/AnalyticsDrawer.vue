@@ -1,6 +1,9 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { computed } from "vue";
 import type { TextMetricsResult } from "../../types";
+import { useI18n } from "../../i18n";
 
 const { metrics } = defineProps<{
   metrics: TextMetricsResult;
@@ -10,52 +13,58 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
+const { t, messages } = useI18n();
+
 const fleschLabel = computed(() => {
   const f = metrics.fleschReadingEase;
-  if (f >= 80) return "Очень легко (Детская / развлекательная)";
-  if (f >= 60) return "Оптимально (Стандарт художественной прозы)";
-  if (f >= 45) return "Умеренно сложная (Литературная классика)";
-  return "Плотная (Философия / Академический эпос)";
+  if (f >= 80) return t("analytics.fleschEasy");
+  if (f >= 60) return t("analytics.fleschOptimal");
+  if (f >= 45) return t("analytics.fleschLiterary");
+  return t("analytics.fleschDense");
+});
+
+const toneLabel = computed(() => {
+  return messages.value.analytics.tones[metrics.sentimentToneKey] ?? messages.value.analytics.tones.neutral;
 });
 </script>
 
 <template>
   <aside class="analytics-drawer">
     <header class="drawer-header-strip">
-      <h4>Лингвистическая телеметрия</h4>
+      <h4>{{ t("analytics.title") }}</h4>
       <button class="btn-drawer-exit" @click="emit('close')">✕</button>
     </header>
 
     <div class="analytics-grid">
       <div class="analytic-stat-card">
-        <span class="stat-caption">Слов / Знаков</span>
+        <span class="stat-caption">{{ t("analytics.wordsAndChars") }}</span>
         <span class="stat-value">{{ metrics.wordCount }} / {{ metrics.charCount }}</span>
       </div>
       <div class="analytic-stat-card">
-        <span class="stat-caption">Абзацев</span>
+        <span class="stat-caption">{{ t("analytics.paragraphs") }}</span>
         <span class="stat-value">{{ metrics.paragraphCount }}</span>
       </div>
       <div class="analytic-stat-card">
-        <span class="stat-caption">Диалоги</span>
+        <span class="stat-caption">{{ t("analytics.dialogues") }}</span>
         <span class="stat-value">{{ metrics.dialogueRatio.toFixed(1) }}%</span>
       </div>
       <div class="analytic-stat-card">
-        <span class="stat-caption">Лексика (TTR)</span>
+        <span class="stat-caption">{{ t("analytics.vocabulary") }}</span>
         <span class="stat-value">{{ metrics.vocabularyRichness.toFixed(1) }}%</span>
       </div>
       <div class="analytic-stat-card">
-        <span class="stat-caption">Ритмичность каденции</span>
+        <span class="stat-caption">{{ t("analytics.cadence") }}</span>
         <span class="stat-value">{{ metrics.sentenceCadence.toFixed(1) }}</span>
       </div>
       <div class="analytic-stat-card">
-        <span class="stat-caption">Время чтения</span>
-        <span class="stat-value">~{{ metrics.readingTimeMinutes.toFixed(1) }} мин</span>
+        <span class="stat-caption">{{ t("analytics.readingTime") }}</span>
+        <span class="stat-value">~{{ metrics.readingTimeMinutes.toFixed(1) }} {{ t("analytics.minutesUnit") }}</span>
       </div>
     </div>
 
     <div class="readability-index-box">
       <div class="index-head">
-        <span>Индекс Флеша-Мамедова</span>
+        <span>{{ t("analytics.fleschTitle") }}</span>
         <b>{{ Math.round(metrics.fleschReadingEase) }} / 100</b>
       </div>
       <div class="index-track">
@@ -66,8 +75,8 @@ const fleschLabel = computed(() => {
 
     <div class="pacing-sparkline-box">
       <div class="sparkline-head">
-        <span>Кривая темпоритма сцены (Pacing Tensor)</span>
-        <span class="sparkline-val">{{ metrics.sentimentTone }}</span>
+        <span>{{ t("analytics.pacingTitle") }}</span>
+        <span class="sparkline-val">{{ toneLabel }}</span>
       </div>
       <div class="pacing-bars">
         <div
@@ -81,17 +90,17 @@ const fleschLabel = computed(() => {
     </div>
 
     <div v-if="metrics.clicheWarnings.length > 0" class="cliche-block">
-      <span class="warnings-heading">Канцеляризмы и штампы ({{ metrics.clicheWarnings.length }})</span>
+      <span class="warnings-heading">{{ t("analytics.clichesTitle", { count: metrics.clicheWarnings.length }) }}</span>
       <div class="warning-tags">
         <span v-for="c in metrics.clicheWarnings" :key="c" class="cliche-tag">{{ c }}</span>
       </div>
     </div>
 
     <div class="warnings-block">
-      <span class="warnings-heading">Частотные аномалии и повторы</span>
+      <span class="warnings-heading">{{ t("analytics.repetitionsTitle") }}</span>
       <div class="warning-tags">
         <span v-for="w in metrics.repetitionWarnings" :key="w" class="rep-tag">{{ w }}</span>
-        <span v-if="metrics.repetitionWarnings.length === 0" class="rep-empty">Повторы корней в пределах нормы</span>
+        <span v-if="metrics.repetitionWarnings.length === 0" class="rep-empty">{{ t("analytics.repetitionsEmpty") }}</span>
       </div>
     </div>
   </aside>
@@ -99,7 +108,7 @@ const fleschLabel = computed(() => {
 
 <style scoped>
 .analytics-drawer {
-  width: 360px;
+  width: min(100%, 360px);
   background: var(--bg-surface-solid);
   border-left: 1px solid var(--border);
   display: flex;
@@ -112,7 +121,8 @@ const fleschLabel = computed(() => {
   bottom: 0;
   z-index: 35;
   overflow-y: auto;
-  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.6);
+  overscroll-behavior-y: contain;
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.45);
 }
 
 .drawer-header-strip {
@@ -128,11 +138,14 @@ const fleschLabel = computed(() => {
 }
 
 .btn-drawer-exit {
-  background: transparent;
-  border: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .analytics-grid {
@@ -292,5 +305,13 @@ const fleschLabel = computed(() => {
   font-size: 11px;
   color: var(--text-dim);
   padding: 12px 0;
+}
+
+@media (max-width: 900px) {
+  .analytics-drawer {
+    width: 100%;
+    border-left: none;
+    border-radius: 14px;
+  }
 }
 </style>

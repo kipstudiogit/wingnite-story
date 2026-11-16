@@ -1,4 +1,8 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
+import { useI18n } from "../../i18n";
+
 const {
   isSyncing,
   currentWords,
@@ -12,22 +16,24 @@ const {
   currentRevision: number;
   syncError: string | null;
 }>();
+
+const { t, formatNumber } = useI18n();
 </script>
 
 <template>
   <footer class="system-statusbar">
     <div class="status-left">
       <span class="status-indicator" :class="{ syncing: isSyncing }"></span>
-      <span>SQLite WAL</span>
+      <span>{{ t("statusbar.sqliteWal") }}</span>
       <span class="status-divider">/</span>
-      <span>Слов: <b>{{ currentWords }}</b></span>
+      <span>{{ t("statusbar.words") }}: <b>{{ formatNumber(currentWords) }}</b></span>
       <span class="status-divider">/</span>
-      <span>Всего: <b>{{ totalSystemWords }}</b></span>
+      <span>{{ t("statusbar.total") }}: <b>{{ formatNumber(totalSystemWords) }}</b></span>
       <span class="status-divider">/</span>
-      <span>Ревизия: <b>r{{ currentRevision }}</b></span>
+      <span>{{ t("statusbar.revision") }}: <b>r{{ currentRevision }}</b></span>
     </div>
     <div class="status-right">
-      <span>Wingnite v1.3.0 • {{ syncError || (isSyncing ? 'Синхронизация...' : 'Ядро верифицировано') }}</span>
+      <span>{{ t("statusbar.versionLabel") }} • {{ syncError || (isSyncing ? t("statusbar.syncing") : t("statusbar.verified")) }}</span>
     </div>
   </footer>
 </template>

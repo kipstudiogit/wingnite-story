@@ -1,7 +1,10 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { renderMarkdown } from "../utils/markdown";
 import { useHaptics } from "../composables/useHaptics";
+import { useI18n } from "../i18n";
 
 const { title, category, content, fontSize, hasPrev, hasNext } = defineProps<{
   title: string;
@@ -20,6 +23,7 @@ const emit = defineEmits<{
 }>();
 
 const { vibrateLight, vibrateSelection } = useHaptics();
+const { t } = useI18n();
 
 type ReaderAtmosphere = "ivory" | "parchment" | "sepia" | "midnight";
 
@@ -55,78 +59,57 @@ function toggleBookmark() {
   <section :class="['stage-reader', `atmosphere-${atmosphere}`, `width-${columnWidth}`, { 'spread-active': isSpreadMode }]">
     <div class="reader-floating-hud">
       <div class="hud-group">
-        <button
-          :class="['hud-pill-btn', { active: atmosphere === 'ivory' }]"
-          title="Слоновая кость"
-          @click="atmosphere = 'ivory'"
-        >
-          Ивори
+        <button :class="['hud-pill-btn', { active: atmosphere === 'ivory' }]" @click="atmosphere = 'ivory'">
+          {{ t("reader.ivory") }}
         </button>
-        <button
-          :class="['hud-pill-btn', { active: atmosphere === 'parchment' }]"
-          title="Имперский пергамент"
-          @click="atmosphere = 'parchment'"
-        >
-          Пергамент
+        <button :class="['hud-pill-btn', { active: atmosphere === 'parchment' }]" @click="atmosphere = 'parchment'">
+          {{ t("reader.parchment") }}
         </button>
-        <button
-          :class="['hud-pill-btn', { active: atmosphere === 'sepia' }]"
-          title="Французская сепия"
-          @click="atmosphere = 'sepia'"
-        >
-          Сепия
+        <button :class="['hud-pill-btn', { active: atmosphere === 'sepia' }]" @click="atmosphere = 'sepia'">
+          {{ t("reader.sepia") }}
         </button>
-        <button
-          :class="['hud-pill-btn', { active: atmosphere === 'midnight' }]"
-          title="Бархатная полночь"
-          @click="atmosphere = 'midnight'"
-        >
-          Полночь
+        <button :class="['hud-pill-btn', { active: atmosphere === 'midnight' }]" @click="atmosphere = 'midnight'">
+          {{ t("reader.midnight") }}
         </button>
       </div>
 
       <div class="hud-divider"></div>
 
       <div class="hud-group">
-        <button
-          :class="['hud-pill-btn', { active: isSpreadMode }]"
-          title="Переключить книжный разворот"
-          @click="isSpreadMode = !isSpreadMode"
-        >
-          <span>{{ isSpreadMode ? 'Разворот' : 'Свиток' }}</span>
+        <button :class="['hud-pill-btn', 'hud-desktop-only', { active: isSpreadMode }]" @click="isSpreadMode = !isSpreadMode">
+          <span>{{ isSpreadMode ? t("reader.spreadMode") : t("reader.scrollMode") }}</span>
         </button>
         <button
-          class="hud-pill-btn"
-          title="Ширина текста"
+          class="hud-pill-btn hud-desktop-only"
           @click="columnWidth = columnWidth === 'narrow' ? 'standard' : columnWidth === 'standard' ? 'wide' : 'narrow'"
         >
-          {{ columnWidth === 'narrow' ? 'Компакт' : columnWidth === 'standard' ? 'Стандарт' : 'Широкий' }}
+          {{ columnWidth === "narrow" ? t("reader.widthNarrow") : columnWidth === "standard" ? t("reader.widthStandard") : t("reader.widthWide") }}
         </button>
       </div>
 
-      <div class="hud-divider"></div>
+      <div class="hud-divider hud-desktop-only"></div>
 
-      <button class="hud-edit-cta" @click="emit('edit')">Редактор ✎</button>
+      <button class="hud-edit-cta" @click="emit('edit')">{{ t("reader.editCta") }}</button>
     </div>
 
     <div class="book-tome-chassis" :style="{ fontSize: `${fontSize}px` }">
       <div
         :class="['silk-bookmark-ribbon', { saved: isBookmarkActive }]"
-        title="Поставить закладку"
+        :title="t('reader.bookmarkTooltip')"
         @click="toggleBookmark"
       >
         <span class="ribbon-shine"></span>
       </div>
 
       <div class="book-running-header">
-        <span class="header-left-col">«Wingnite Story»</span>
+        <span class="header-left-col">«{{ t("common.appName") }}»</span>
         <span class="header-center-col">✦</span>
-        <span class="header-right-col">{{ category || 'Черновик' }} • {{ title || 'Без названия' }}</span>
+        <span class="header-right-col">{{ category || t("studio.defaultCategory") }} • {{ title || t("common.untitled") }}</span>
       </div>
 
       <header class="sheet-title-zone">
         <span class="sheet-badge-canon">{{ category }}</span>
-        <h1 class="sheet-main-title">{{ title || 'Новая глава' }}</h1>
+        <h1 class="sheet-main-title">{{ title || t("reader.defaultSceneTitle") }}</h1>
         <div class="sheet-ornament">
           <span class="ornament-wing-left"></span>
           <span class="ornament-center">❦</span>
@@ -149,28 +132,20 @@ function toggleBookmark() {
       </div>
 
       <div class="book-running-footer">
-        <span class="footer-meta">~{{ readingTimeMinutes }} мин чтения</span>
+        <span class="footer-meta">{{ t("reader.readingMinutes", { minutes: readingTimeMinutes }) }}</span>
         <span class="footer-fleuron">❦</span>
-        <span class="footer-status">{{ isBookmarkActive ? 'Закладка сохранена' : 'Конец сцены' }}</span>
+        <span class="footer-status">{{ isBookmarkActive ? t("reader.bookmarkSaved") : t("reader.endOfScene") }}</span>
       </div>
 
       <nav class="reader-chapter-nav">
-        <button
-          class="btn-nav-chapter"
-          :disabled="!hasPrev"
-          @click="emit('prev')"
-        >
-          ← Предыдущая глава
+        <button class="btn-nav-chapter" :disabled="!hasPrev" @click="emit('prev')">
+          {{ t("reader.prevChapter") }}
         </button>
         <button class="btn-nav-chapter primary" @click="emit('edit')">
-          Перейти в студию ✎
+          {{ t("reader.editInStudio") }}
         </button>
-        <button
-          class="btn-nav-chapter"
-          :disabled="!hasNext"
-          @click="emit('next')"
-        >
-          Следующая глава →
+        <button class="btn-nav-chapter" :disabled="!hasNext" @click="emit('next')">
+          {{ t("reader.nextChapter") }}
         </button>
       </nav>
     </div>
@@ -184,9 +159,10 @@ function toggleBookmark() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 30px 20px calc(var(--safe-bottom) + 80px) 20px;
+  padding: 24px max(16px, var(--safe-right)) calc(var(--safe-bottom) + 40px) max(16px, var(--safe-left));
   position: relative;
   transition: background 0.3s ease;
+  -webkit-overflow-scrolling: touch;
 }
 
 .stage-reader.atmosphere-ivory {
@@ -228,15 +204,17 @@ function toggleBookmark() {
 .reader-floating-hud {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--bg-surface);
   backdrop-filter: blur(24px);
   border: 1px solid var(--border);
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-radius: 999px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   z-index: 20;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .hud-group {
@@ -248,6 +226,7 @@ function toggleBookmark() {
   width: 1px;
   height: 18px;
   background: var(--border);
+  flex-shrink: 0;
 }
 
 .hud-pill-btn {
@@ -256,10 +235,11 @@ function toggleBookmark() {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .hud-pill-btn:hover {
@@ -277,10 +257,11 @@ function toggleBookmark() {
   border: 1px solid var(--accent-cyan);
   color: var(--accent-cyan);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 5px 12px;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .book-tome-chassis {
@@ -291,7 +272,7 @@ function toggleBookmark() {
   border: 1px solid var(--book-border);
   box-shadow: var(--book-shadow);
   border-radius: 20px;
-  padding: 64px 60px;
+  padding: 56px 52px;
   position: relative;
   font-family: var(--font-serif);
   line-height: 1.95;
@@ -326,9 +307,9 @@ function toggleBookmark() {
 .silk-bookmark-ribbon {
   position: absolute;
   top: -6px;
-  right: 50px;
-  width: 26px;
-  height: 60px;
+  right: 40px;
+  width: 24px;
+  height: 54px;
   background: linear-gradient(135deg, var(--book-gold) 0%, #b45309 100%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
@@ -342,7 +323,7 @@ function toggleBookmark() {
 }
 
 .silk-bookmark-ribbon.saved {
-  height: 80px;
+  height: 74px;
   background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
 }
 
@@ -370,7 +351,7 @@ function toggleBookmark() {
 
 .sheet-title-zone {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 36px;
 }
 
 .sheet-badge-canon {
@@ -384,7 +365,7 @@ function toggleBookmark() {
 
 .sheet-main-title {
   font-family: "Playfair Display", Georgia, serif;
-  font-size: 2.8em;
+  font-size: 2.6em;
   letter-spacing: -0.02em;
   margin: 12px 0 18px 0;
   line-height: 1.22;
@@ -414,7 +395,7 @@ function toggleBookmark() {
 
 .sheet-prose :deep(p:first-of-type::first-letter) {
   font-family: "Playfair Display", Georgia, serif;
-  font-size: 3.8em;
+  font-size: 3.6em;
   float: left;
   line-height: 0.8;
   padding-right: 0.14em;
@@ -426,7 +407,7 @@ function toggleBookmark() {
 .sheet-end-mark {
   text-align: center;
   color: var(--book-gold);
-  margin: 50px 0 20px 0;
+  margin: 44px 0 20px 0;
 }
 
 .end-symbol-cluster {
@@ -452,7 +433,7 @@ function toggleBookmark() {
   color: var(--book-gold);
   border-top: 1px solid var(--book-border);
   padding-top: 14px;
-  margin-top: 30px;
+  margin-top: 28px;
   opacity: 0.85;
 }
 
@@ -463,15 +444,17 @@ function toggleBookmark() {
 .reader-chapter-nav {
   display: flex;
   justify-content: space-between;
-  margin-top: 36px;
-  gap: 12px;
+  margin-top: 30px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .btn-nav-chapter {
   background: var(--bg-card);
   border: 1px solid var(--book-border);
   color: var(--book-text);
-  padding: 10px 18px;
+  padding: 10px 16px;
+  min-height: 42px;
   border-radius: 10px;
   font-family: var(--font-sans);
   font-size: 12px;
@@ -491,22 +474,40 @@ function toggleBookmark() {
   cursor: not-allowed;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .stage-reader {
-    padding: 16px 10px calc(var(--safe-bottom) + 80px) 10px;
+    padding: 12px max(10px, var(--safe-right)) 24px max(10px, var(--safe-left));
+  }
+
+  .hud-desktop-only {
+    display: none;
   }
 
   .book-tome-chassis {
-    padding: 40px 20px;
-    border-radius: 14px;
+    padding: 36px 18px;
+    border-radius: 16px;
+  }
+
+  .silk-bookmark-ribbon {
+    right: 18px;
+    width: 20px;
+    height: 44px;
   }
 
   .sheet-main-title {
-    font-size: 2em;
+    font-size: 1.85em;
   }
 
   .book-running-header {
     display: none;
+  }
+
+  .reader-chapter-nav {
+    flex-direction: column;
+  }
+
+  .btn-nav-chapter {
+    width: 100%;
   }
 }
 </style>

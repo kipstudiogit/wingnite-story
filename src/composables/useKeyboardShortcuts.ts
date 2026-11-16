@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { onMounted, onUnmounted } from "vue";
 
 export function useKeyboardShortcuts(actions: {

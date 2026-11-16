@@ -1,6 +1,9 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import MobileDrawerSheet from "./MobileDrawerSheet.vue";
 import type { AppTab, ProjectItem, ThemeMode } from "../../types";
+import { useI18n, type LocaleCode } from "../../i18n";
 
 const {
   isOpen,
@@ -24,6 +27,7 @@ const emit = defineEmits<{
   (e: "importWstory"): void;
   (e: "checkUpdate"): void;
   (e: "selectTab", tab: AppTab): void;
+  (e: "openSearch"): void;
   (e: "getTwist"): void;
   (e: "setTheme", theme: ThemeMode): void;
   (e: "exportHtml"): void;
@@ -31,17 +35,19 @@ const emit = defineEmits<{
   (e: "exportTxt"): void;
   (e: "importTxt"): void;
 }>();
+
+const { t, locale, availableLocales, setLocale } = useI18n();
 </script>
 
 <template>
   <MobileDrawerSheet
     :is-open="isOpen"
-    title="Панель инструментов"
+    :title="t('mobile.toolsTitle')"
     @close="emit('close')"
   >
     <div class="mobile-menu-grid">
       <div class="menu-action-block">
-        <h4>Произведение</h4>
+        <h4>{{ t("projects.title") }}</h4>
         <div class="menu-btn-row">
           <button
             v-for="p in projects"
@@ -52,50 +58,65 @@ const emit = defineEmits<{
             {{ p.title }}
           </button>
           <button class="menu-chip-btn accent" @click="emit('newProject')">
-            + Новая книга
+            {{ t("projects.newProject") }}
           </button>
         </div>
       </div>
 
       <div class="menu-action-block">
-        <h4>Импорт и Экспорт файлов</h4>
+        <h4>{{ t("settings.localization.languageLabel") }}</h4>
         <div class="menu-btn-row">
-          <button class="menu-chip-btn" @click="emit('importTxt')">Импорт .TXT</button>
-          <button class="menu-chip-btn" @click="emit('exportTxt')">Экспорт .TXT</button>
-          <button class="menu-chip-btn" @click="emit('exportWstory')">Экспорт .WSTORY</button>
-          <button class="menu-chip-btn" @click="emit('importWstory')">Импорт .WSTORY</button>
+          <button
+            v-for="loc in availableLocales"
+            :key="loc.code"
+            :class="['theme-chip-btn', { active: locale === loc.code }]"
+            @click="setLocale(loc.code as LocaleCode)"
+          >
+            {{ loc.nativeName }}
+          </button>
         </div>
       </div>
 
       <div class="menu-action-block">
-        <h4>Навигация модулей</h4>
+        <h4>{{ t("mobile.importExportTitle") }}</h4>
         <div class="menu-btn-row">
-          <button class="menu-chip-btn" @click="emit('selectTab', 'timeline')">Таймлайн</button>
-          <button class="menu-chip-btn" @click="emit('selectTab', 'graph')">Космос (Граф)</button>
-          <button class="menu-chip-btn accent-purple" @click="emit('selectTab', 'settings')">⚙ Настройки</button>
-          <button class="menu-chip-btn" @click="emit('getTwist')">Генератор твиста</button>
+          <button class="menu-chip-btn" @click="emit('importTxt')">{{ t("toc.importTxt") }}</button>
+          <button class="menu-chip-btn" @click="emit('exportTxt')">{{ t("toc.exportTxt") }}</button>
+          <button class="menu-chip-btn" @click="emit('exportWstory')">{{ t("toc.exportWstory") }}</button>
+          <button class="menu-chip-btn" @click="emit('importWstory')">{{ t("toc.importWstory") }}</button>
         </div>
       </div>
 
       <div class="menu-action-block">
-        <h4>Темы оформления</h4>
+        <h4>{{ t("mobile.modulesTitle") }}</h4>
         <div class="menu-btn-row">
-          <button :class="['theme-chip-btn', { active: currentTheme === 'obsidian' }]" @click="emit('setTheme', 'obsidian')">Dark</button>
-          <button :class="['theme-chip-btn', { active: currentTheme === 'celestial' }]" @click="emit('setTheme', 'celestial')">Amber</button>
-          <button :class="['theme-chip-btn', { active: currentTheme === 'sepia' }]" @click="emit('setTheme', 'sepia')">Sepia</button>
-          <button :class="['theme-chip-btn', { active: currentTheme === 'paper' }]" @click="emit('setTheme', 'paper')">Paper</button>
-          <button :class="['theme-chip-btn', { active: currentTheme === 'oled' }]" @click="emit('setTheme', 'oled')">OLED</button>
+          <button class="menu-chip-btn accent" @click="emit('openSearch')">⌕ {{ t("common.search") }}</button>
+          <button class="menu-chip-btn" @click="emit('selectTab', 'timeline')">{{ t("nav.timeline") }}</button>
+          <button class="menu-chip-btn" @click="emit('selectTab', 'graph')">{{ t("nav.graph") }}</button>
+          <button class="menu-chip-btn accent-purple" @click="emit('selectTab', 'settings')">⚙ {{ t("nav.settings") }}</button>
+          <button class="menu-chip-btn" @click="emit('getTwist')">{{ t("nav.twist") }}</button>
         </div>
       </div>
 
       <div class="menu-action-block">
-        <h4>Обновление и сборка</h4>
+        <h4>{{ t("mobile.themesTitle") }}</h4>
+        <div class="menu-btn-row">
+          <button :class="['theme-chip-btn', { active: currentTheme === 'obsidian' }]" @click="emit('setTheme', 'obsidian')">{{ t("subtoolbar.themes.obsidian") }}</button>
+          <button :class="['theme-chip-btn', { active: currentTheme === 'celestial' }]" @click="emit('setTheme', 'celestial')">{{ t("subtoolbar.themes.celestial") }}</button>
+          <button :class="['theme-chip-btn', { active: currentTheme === 'sepia' }]" @click="emit('setTheme', 'sepia')">{{ t("subtoolbar.themes.sepia") }}</button>
+          <button :class="['theme-chip-btn', { active: currentTheme === 'paper' }]" @click="emit('setTheme', 'paper')">{{ t("subtoolbar.themes.paper") }}</button>
+          <button :class="['theme-chip-btn', { active: currentTheme === 'oled' }]" @click="emit('setTheme', 'oled')">{{ t("subtoolbar.themes.oled") }}</button>
+        </div>
+      </div>
+
+      <div class="menu-action-block">
+        <h4>{{ t("mobile.buildAndUpdatesTitle") }}</h4>
         <div class="menu-btn-row vertical">
           <button class="menu-export-btn" @click="emit('checkUpdate')">
-            {{ isCheckingUpdate ? 'Проверка...' : 'Проверить обновление (v1.3.0)' }}
+            {{ isCheckingUpdate ? t("mobile.checkingBtn") : t("mobile.checkUpdateBtn") }}
           </button>
-          <button class="menu-export-btn" @click="emit('exportHtml')">Экспорт издания (HTML)</button>
-          <button class="menu-export-btn" @click="emit('exportMd')">Экспорт рукописи (Markdown)</button>
+          <button class="menu-export-btn" @click="emit('exportHtml')">{{ t("toc.buildHtml") }}</button>
+          <button class="menu-export-btn" @click="emit('exportMd')">{{ t("toc.exportMarkdown") }}</button>
         </div>
       </div>
     </div>
@@ -132,6 +153,7 @@ const emit = defineEmits<{
   border: 1px solid var(--border);
   color: var(--text-main);
   border-radius: 10px;
+  min-height: 42px;
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 700;
@@ -145,13 +167,13 @@ const emit = defineEmits<{
 }
 
 .menu-chip-btn.accent {
-  background: rgba(6, 182, 212, 0.15);
+  background: var(--bg-card-hover);
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
 }
 
 .menu-chip-btn.accent-purple {
-  background: rgba(168, 85, 247, 0.15);
+  background: var(--bg-card-hover);
   border-color: var(--accent-purple);
   color: var(--accent-purple);
 }
@@ -161,6 +183,7 @@ const emit = defineEmits<{
   border: 1px solid var(--border);
   color: var(--text-muted);
   border-radius: 8px;
+  min-height: 38px;
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 700;
@@ -178,6 +201,7 @@ const emit = defineEmits<{
   border: 1px solid var(--border);
   color: var(--text-pure);
   border-radius: 12px;
+  min-height: 44px;
   padding: 12px;
   font-size: 12px;
   font-weight: 700;

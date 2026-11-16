@@ -1,4 +1,8 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
+import { useI18n } from "../../i18n";
+
 const { isSyncing = false } = defineProps<{
   isSyncing?: boolean;
 }>();
@@ -7,26 +11,28 @@ const emit = defineEmits<{
   (e: "insert", prefix: string, suffix: string, placeholder?: string): void;
   (e: "save"): void;
 }>();
+
+const { t, messages } = useI18n();
 </script>
 
 <template>
   <div class="mobile-keyboard-accessory-bar" @mousedown.prevent @touchstart.prevent>
     <div class="accessory-scroll-track">
-      <button class="acc-btn" @click="emit('insert', '\n# ', '\n', 'Заголовок')">H1</button>
-      <button class="acc-btn" @click="emit('insert', '\n## ', '\n', 'Подзаголовок')">H2</button>
-      <button class="acc-btn" @click="emit('insert', '\n### ', '\n', 'Секция')">H3</button>
-      <button class="acc-btn font-bold" @click="emit('insert', '**', '**', 'текст')">B</button>
-      <button class="acc-btn font-italic" @click="emit('insert', '*', '*', 'текст')">I</button>
-      <button class="acc-btn" @click="emit('insert', '~~', '~~', 'текст')">S</button>
-      <button class="acc-btn accent-btn" @click="emit('insert', '[[', ']]', 'Сущность')">[[ Wiki ]]</button>
-      <button class="acc-btn accent-btn" @click="emit('insert', '@', ' ', 'Персонаж')">@Имя</button>
-      <button class="acc-btn highlight-btn" @click="emit('insert', '==', '==', 'важное')">==Выделить==</button>
-      <button class="acc-btn spoiler-btn" @click="emit('insert', '||', '||', 'спойлер')">||Спойлер||</button>
-      <button class="acc-btn" @click="emit('insert', '\n> «', '»\n', 'Цитата')">« »</button>
-      <button class="acc-btn" @click="emit('insert', '\n- [ ] ', '\n', 'Задача')">☑ Чеклист</button>
-      <button class="acc-btn" @click="emit('insert', '\n- ', '\n', 'Пункт')">• Список</button>
-      <button class="acc-btn" @click="emit('insert', '`', '`', 'код')">&lt;/&gt;</button>
-      <button class="acc-btn" @click="emit('insert', '\n\n---\n\n', '', '')">— Разделитель</button>
+      <button class="acc-btn" @click="emit('insert', '\n# ', '\n', messages.studio.toolbar.h1Sample)">{{ messages.studio.toolbar.h1 }}</button>
+      <button class="acc-btn" @click="emit('insert', '\n## ', '\n', messages.studio.toolbar.h2Sample)">{{ messages.studio.toolbar.h2 }}</button>
+      <button class="acc-btn" @click="emit('insert', '\n### ', '\n', messages.studio.toolbar.h3Sample)">{{ messages.studio.toolbar.h3 }}</button>
+      <button class="acc-btn font-bold" @click="emit('insert', '**', '**', messages.studio.toolbar.boldSample)">{{ messages.studio.toolbar.bold }}</button>
+      <button class="acc-btn font-italic" @click="emit('insert', '*', '*', messages.studio.toolbar.italicSample)">{{ messages.studio.toolbar.italic }}</button>
+      <button class="acc-btn" @click="emit('insert', '~~', '~~', messages.studio.toolbar.strikeSample)">{{ messages.studio.toolbar.strike }}</button>
+      <button class="acc-btn accent-btn" @click="emit('insert', '[[', ']]', messages.studio.toolbar.wikiSample)">{{ messages.studio.toolbar.wiki }}</button>
+      <button class="acc-btn accent-btn" @click="emit('insert', '@', ' ', messages.studio.toolbar.mentionSample)">{{ messages.studio.toolbar.mention }}</button>
+      <button class="acc-btn highlight-btn" @click="emit('insert', '==', '==', messages.studio.toolbar.highlightSample)">{{ messages.studio.toolbar.highlight }}</button>
+      <button class="acc-btn spoiler-btn" @click="emit('insert', '||', '||', messages.studio.toolbar.spoilerSample)">{{ messages.studio.toolbar.spoiler }}</button>
+      <button class="acc-btn" @click="emit('insert', '\n> «', '»\n', messages.studio.toolbar.quoteSample)">« »</button>
+      <button class="acc-btn" @click="emit('insert', '\n- [ ] ', '\n', messages.studio.toolbar.checklistSample)">{{ messages.studio.toolbar.checklist }}</button>
+      <button class="acc-btn" @click="emit('insert', '\n- ', '\n', messages.studio.toolbar.listSample)">{{ messages.studio.toolbar.list }}</button>
+      <button class="acc-btn" @click="emit('insert', '`', '`', messages.studio.toolbar.codeSample)">&lt;/&gt;</button>
+      <button class="acc-btn" @click="emit('insert', '\n\n---\n\n', '', '')">{{ messages.studio.toolbar.asterism }}</button>
     </div>
 
     <button
@@ -39,7 +45,7 @@ const emit = defineEmits<{
         <polyline points="17 21 17 13 7 13 7 21"/>
         <polyline points="7 3 7 8 15 8"/>
       </svg>
-      <span>{{ isSyncing ? '...' : 'Сохранить' }}</span>
+      <span>{{ isSyncing ? "..." : t("mobile.saveShort") }}</span>
     </button>
   </div>
 </template>
@@ -49,10 +55,9 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(8, 12, 22, 0.98);
-  backdrop-filter: blur(24px);
+  background: var(--bg-surface-solid);
   border-top: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 6px max(10px, var(--safe-right)) 6px max(10px, var(--safe-left));
   gap: 8px;
   width: 100%;
   flex-shrink: 0;
@@ -71,12 +76,12 @@ const emit = defineEmits<{
 }
 
 .acc-btn {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-main);
-  border-radius: 8px;
-  min-width: 36px;
-  height: 36px;
+  border-radius: 9px;
+  min-width: 38px;
+  height: 38px;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 700;
@@ -105,28 +110,25 @@ const emit = defineEmits<{
 
 .accent-btn {
   color: var(--accent-cyan);
-  border-color: rgba(6, 182, 212, 0.35);
-  background: rgba(6, 182, 212, 0.1);
+  border-color: var(--accent-cyan-glow);
 }
 
 .highlight-btn {
-  color: #fef08a;
-  border-color: rgba(245, 158, 11, 0.35);
-  background: rgba(245, 158, 11, 0.1);
+  color: var(--accent-gold);
+  border-color: var(--accent-gold-glow);
 }
 
 .spoiler-btn {
   color: var(--accent-purple);
-  border-color: rgba(168, 85, 247, 0.35);
-  background: rgba(168, 85, 247, 0.1);
+  border-color: var(--accent-purple-glow);
 }
 
 .acc-save-btn {
   background: var(--accent-indigo);
   border: none;
   color: #fff;
-  border-radius: 8px;
-  height: 36px;
+  border-radius: 9px;
+  height: 38px;
   padding: 0 12px;
   font-size: 11px;
   font-weight: 800;

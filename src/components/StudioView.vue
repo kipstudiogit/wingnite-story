@@ -1,13 +1,25 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { StudioViewMode, TextMetricsResult } from "../types";
+import type {
+  EnterpriseStoryItem,
+  SnapshotItem,
+  StudioDrawerType,
+  StudioViewMode,
+  TextMetricsResult,
+} from "../types";
 import { renderMarkdown, toggleMarkdownTask } from "../utils/markdown";
 import { useNarrativeLsp } from "../composables/useNarrativeLsp";
 import { useLoreGuardian } from "../composables/useLoreGuardian";
 import { useEnterpriseVault } from "../composables/useEnterpriseVault";
+import { useRopeEditor } from "../composables/useRopeEditor";
 import { useHaptics } from "../composables/useHaptics";
 import { useAppSettings } from "../composables/useAppSettings";
+import { useI18n } from "../i18n";
+import StudioHeader from "./studio/StudioHeader.vue";
+import StudioToolbar from "./studio/StudioToolbar.vue";
 import AnalyticsDrawer from "./studio/AnalyticsDrawer.vue";
 import LoreDrawer from "./studio/LoreDrawer.vue";
 import VaultDrawer from "./studio/VaultDrawer.vue";
@@ -20,15 +32,19 @@ const content = defineModel<string>("content", { required: true });
 const revision = defineModel<number>("revision", { default: 1 });
 
 const {
+  projectId,
   studioMode,
   fontSize,
   hasActive,
+  compactKeyboardMode = false,
   operator = "Lead-Editor",
   storyId = "",
 } = defineProps<{
+  projectId: string;
   studioMode: StudioViewMode;
   fontSize: number;
   hasActive: boolean;
+  compactKeyboardMode?: boolean;
   operator?: string;
   storyId?: string;
 }>();
@@ -38,10 +54,13 @@ const emit = defineEmits<{
   (e: "delete"): void;
   (e: "selectStoryById", id: string): void;
   (e: "selectEntityByTitle", entityTitle: string): void;
+  (e: "entityCreated", story: EnterpriseStoryItem): void;
+  (e: "notify", msg: string, kind: "success" | "error"): void;
 }>();
 
 const { settings } = useAppSettings();
 const { vibrateLight, vibrateSelection, vibrateSuccess } = useHaptics();
+const { t, locale } = useI18n();
 
 const {
   isSuggestionsOpen,
@@ -55,45 +74,62 @@ const {
   handleKeydownNavigation,
   inspectHoverWord,
   dismissHover,
-} = useNarrativeLsp(() => storyId || "");
+} = useNarrativeLsp(() => projectId, () => storyId || "");
 
 const {
   isAnalyzing: isLoreAnalyzing,
   consistencyScore,
+  verifiedClaimsCount,
   anomalies,
   semanticResults,
   triggerLoreAuditDebounced,
   executeSemanticSearch,
   dismissAnomaly,
-} = useLoreGuardian();
+} = useLoreGuardian(() => projectId);
 
 const {
   vaultStatus,
+  snapshots,
   isSealing,
+  isUnlocking,
   isVerifying,
+  isLoadingSnapshots,
   verificationResult,
+  vaultError,
   loadVaultStatus,
   sealProject,
+  unlockProject,
   verifyVaultIntegrity,
-} = useEnterpriseVault();
+  loadSnapshots,
+  createSnapshot,
+  deleteSnapshot,
+} = useEnterpriseVault(() => projectId, () => storyId || "");
 
-const showAnalytics = ref(false);
-const showLore = ref(false);
-const showVault = ref(false);
+const {
+  totalLines: ropeTotalLines,
+  revisionHash: ropeRevisionHash,
+  initSession: initRopeSession,
+  syncTextDelta,
+  closeActiveSession: closeRopeSession,
+} = useRopeEditor(() => projectId, () => storyId || "");
+
+const activeDrawer = ref<StudioDrawerType>(null);
 const mobileActiveTab = ref<"editor" | "preview">("editor");
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const renderedHtml = ref(renderMarkdown(content.value));
 
+const isVaultLocked = computed(() => Boolean(vaultStatus.value?.isLocked));
+
 const metrics = ref<TextMetricsResult>({
   wordCount: 0,
   charCount: 0,
-  paragraphCount: 0,
+  paragraphCount: 1,
   readingTimeMinutes: 0,
   dialogueRatio: 0,
   sentenceCadence: 0,
   vocabularyRichness: 0,
   fleschReadingEase: 0,
-  sentimentTone: "Нейтральный",
+  sentimentToneKey: "neutral",
   repetitionWarnings: [],
   clicheWarnings: [],
   pacingTimeline: [0, 0, 0, 0, 0, 0, 0, 0],
@@ -103,32 +139,94 @@ let parseDebounce: number | null = null;
 let metricsDebounce: number | null = null;
 let hoverTimer: number | null = null;
 
-watch(content, (newText: string) => {
-  if (parseDebounce) clearTimeout(parseDebounce);
-  parseDebounce = window.setTimeout(() => {
-    renderedHtml.value = renderMarkdown(newText);
-  }, 40);
-
-  if (metricsDebounce) clearTimeout(metricsDebounce);
-  metricsDebounce = window.setTimeout(async () => {
-    try {
-      metrics.value = await invoke<TextMetricsResult>("analyze_text_metrics", {
-        text: newText,
-      });
-    } catch {
-      metrics.value.wordCount = newText.trim() ? newText.trim().split(/\s+/).length : 0;
-      metrics.value.charCount = newText.length;
-    }
-  }, 180);
-
-  if (settings.value.loreAuditOnInput) {
-    triggerLoreAuditDebounced(newText);
+function toggleDrawer(drawer: Exclude<StudioDrawerType, null>) {
+  activeDrawer.value = activeDrawer.value === drawer ? null : drawer;
+  if (activeDrawer.value === "vault") {
+    loadSnapshots();
   }
-});
+}
+
+async function computeMetrics(text: string) {
+  try {
+    metrics.value = await invoke<TextMetricsResult>("analyze_text_metrics", {
+      text,
+      locale: locale.value,
+    });
+  } catch {
+    metrics.value.wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+    metrics.value.charCount = text.length;
+  }
+}
+
+watch(
+  () => [storyId, projectId],
+  async ([nextStoryId]) => {
+    await initRopeSession(content.value, nextStoryId || "__draft__");
+    await loadVaultStatus();
+    await loadSnapshots(nextStoryId || "");
+  },
+  { immediate: true }
+);
+
+watch(
+  [content, locale],
+  ([newText]) => {
+    syncTextDelta(newText);
+
+    if (parseDebounce) clearTimeout(parseDebounce);
+    parseDebounce = window.setTimeout(() => {
+      renderedHtml.value = renderMarkdown(newText);
+    }, 40);
+
+    if (metricsDebounce) clearTimeout(metricsDebounce);
+    metricsDebounce = window.setTimeout(() => {
+      computeMetrics(newText);
+    }, 180);
+
+    if (settings.value.loreAuditOnInput) {
+      triggerLoreAuditDebounced(newText);
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  [() => projectId, () => settings.value.loreSensitivity],
+  () => {
+    if (settings.value.loreAuditOnInput) {
+      triggerLoreAuditDebounced(content.value, 120);
+    }
+  }
+);
+
+function inspectCursorToken(el: HTMLTextAreaElement) {
+  const pos = el.selectionStart;
+  const txt = content.value;
+  const before = txt.slice(0, pos);
+  const openBracket = before.lastIndexOf("[[");
+  const closeBracket = before.lastIndexOf("]]");
+  if (openBracket !== -1 && openBracket > closeBracket) {
+    const endBracket = txt.indexOf("]]", pos);
+    const token =
+      endBracket !== -1 ? txt.slice(openBracket + 2, endBracket) : txt.slice(openBracket + 2, pos);
+    if (token.trim().length >= 2) {
+      const rect = el.getBoundingClientRect();
+      inspectHoverWord(token, rect.left + 20, rect.top + 30);
+      return;
+    }
+  }
+  dismissHover();
+}
 
 function handleTextareaInput(e: Event) {
+  if (isVaultLocked.value) return;
   const target = e.target as HTMLTextAreaElement;
   evaluateCursorContext(content.value, target.selectionStart);
+}
+
+function handleTextareaCursorEvent(e: Event) {
+  const target = e.target as HTMLTextAreaElement;
+  inspectCursorToken(target);
 }
 
 function handleTextareaKeydown(e: KeyboardEvent) {
@@ -146,9 +244,18 @@ function handleTextareaKeydown(e: KeyboardEvent) {
 }
 
 async function confirmSuggestion(sug: typeof suggestions.value[0]) {
+  if (isVaultLocked.value) return;
   const el = textareaRef.value;
   const cursor = el ? el.selectionStart : content.value.length;
-  const { nextText, nextCursor } = await applySuggestion(sug, content.value, cursor, operator);
+  const { nextText, nextCursor, createdStory } = await applySuggestion(
+    sug,
+    content.value,
+    cursor,
+    operator
+  );
+  if (createdStory) {
+    emit("entityCreated", createdStory);
+  }
   content.value = nextText;
   vibrateLight();
   requestAnimationFrame(() => {
@@ -159,38 +266,64 @@ async function confirmSuggestion(sug: typeof suggestions.value[0]) {
   });
 }
 
-function handleTextareaMousemove(e: MouseEvent) {
-  if (hoverTimer) clearTimeout(hoverTimer);
-  const clientX = e.clientX;
-  const clientY = e.clientY;
+function handlePreviewMouseover(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  const entityNode = target.closest(".md-wikilink, .md-mention") as HTMLElement | null;
+  if (!entityNode) return;
 
+  const lookup =
+    entityNode.dataset.entity || entityNode.textContent?.replace(/[@◈]/g, "").trim() || "";
+  if (lookup.length < 2) return;
+
+  if (hoverTimer) clearTimeout(hoverTimer);
+  const cx = e.clientX;
+  const cy = e.clientY;
   hoverTimer = window.setTimeout(() => {
-    const el = textareaRef.value;
-    if (!el) return;
-    const charPos = el.selectionStart;
-    const txt = content.value;
-    const left = txt.slice(0, charPos).split(/[\s,.;!?]+/).pop() || "";
-    const right = txt.slice(charPos).split(/[\s,.;!?]+/)[0] || "";
-    const hoveredWord = left + right;
-
-    if (hoveredWord.length > 2) {
-      inspectHoverWord(hoveredWord, clientX, clientY);
-    } else {
-      dismissHover();
-    }
-  }, 180);
+    inspectHoverWord(lookup, cx, cy);
+  }, 140);
 }
 
-function handleTextareaMouseleave() {
-  if (hoverTimer) clearTimeout(hoverTimer);
-  dismissHover();
+function handlePreviewMouseout(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest(".md-wikilink, .md-mention")) {
+    if (hoverTimer) clearTimeout(hoverTimer);
+    dismissHover();
+  }
 }
 
-async function handleSealVault(passphrase: string) {
-  await sealProject(passphrase, operator);
+async function handleSealVault(passphrase: string, lockEditing: boolean) {
+  const ok = await sealProject(passphrase, lockEditing, operator);
+  if (ok) {
+    emit("notify", t("notifications.vaultSealedToast"), "success");
+  }
+}
+
+async function handleUnlockVault(passphrase: string) {
+  const ok = await unlockProject(passphrase, operator);
+  if (ok) {
+    emit("notify", t("notifications.vaultUnlockedToast"), "success");
+  } else if (vaultError.value) {
+    emit("notify", t("notifications.vaultUnlockError", { error: vaultError.value }), "error");
+  }
+}
+
+async function handleCreateSnapshot() {
+  const snap = await createSnapshot(storyId, title.value, content.value);
+  if (snap) {
+    emit("notify", t("notifications.snapshotSavedToast"), "success");
+  }
+}
+
+function handleRestoreSnapshot(snap: SnapshotItem) {
+  if (isVaultLocked.value) return;
+  title.value = snap.title;
+  content.value = snap.content;
+  vibrateSuccess();
+  emit("notify", t("notifications.snapshotRestoredToast"), "success");
 }
 
 function wrapSelection(prefix: string, suffix: string, placeholder = "") {
+  if (isVaultLocked.value) return;
   const el = textareaRef.value;
   if (!el) {
     content.value += prefix + placeholder + suffix;
@@ -229,6 +362,7 @@ function handlePreviewClick(e: MouseEvent) {
     return;
   }
 
+  if (isVaultLocked.value) return;
   const taskCheck = target.closest(".task-check") as HTMLInputElement | null;
   if (taskCheck && taskCheck.dataset.taskIndex !== undefined) {
     const idx = parseInt(taskCheck.dataset.taskIndex, 10);
@@ -240,154 +374,86 @@ function handlePreviewClick(e: MouseEvent) {
 onMounted(() => {
   loadVaultStatus();
 });
+
+onUnmounted(() => {
+  if (parseDebounce) clearTimeout(parseDebounce);
+  if (metricsDebounce) clearTimeout(metricsDebounce);
+  if (hoverTimer) clearTimeout(hoverTimer);
+  closeRopeSession();
+});
 </script>
 
 <template>
   <section :class="['enterprise-workbench-studio', `mode-${studioMode}`]">
-    <div class="mobile-dual-nav">
+    <div v-show="!compactKeyboardMode" class="mobile-dual-nav">
       <button
         :class="['dual-tab-pill', { active: mobileActiveTab === 'editor' }]"
         @click="mobileActiveTab = 'editor'"
       >
-        <span>Терминал</span>
+        <span>{{ t("studio.editorTab") }}</span>
       </button>
       <button
         :class="['dual-tab-pill', { active: mobileActiveTab === 'preview' }]"
         @click="mobileActiveTab = 'preview'"
       >
-        <span>Предпросмотр</span>
+        <span>{{ t("studio.previewTab") }}</span>
       </button>
     </div>
 
     <div
-      v-show="studioMode !== 'preview' && mobileActiveTab !== 'preview'"
+      v-show="studioMode !== 'preview' && (mobileActiveTab !== 'preview' || compactKeyboardMode)"
       class="editor-chassis"
       :style="{ maxWidth: settings.canvasMaxWidth }"
     >
-      <div class="editor-telemetry-header">
-        <div class="meta-input-capsules">
-          <input
-            v-model="title"
-            class="capsule-title-input"
-            placeholder="Название сцены..."
-          />
-          <input
-            v-model="category"
-            class="capsule-category-input"
-            placeholder="Секция / Акт"
-          />
-        </div>
+      <StudioHeader
+        v-show="!compactKeyboardMode"
+        v-model:title="title"
+        v-model:category="category"
+        :revision="revision"
+        :vault-sealed="!!vaultStatus?.isSealed"
+        :vault-locked="isVaultLocked"
+        :consistency-score="consistencyScore"
+        :active-drawer="activeDrawer"
+        :has-active="hasActive"
+        @toggle-drawer="toggleDrawer"
+        @delete="emit('delete')"
+      />
 
-        <div class="header-action-controls">
-          <div class="revision-telemetry-badge">
-            <span class="rev-label">REV</span>
-            <span class="rev-digit">{{ revision }}</span>
-          </div>
-
-          <div
-            class="vault-status-indicator"
-            :class="{ sealed: vaultStatus?.isSealed }"
-            title="Статус криптографического сейфа"
-            @click="showVault = !showVault"
-          >
-            <span class="vault-orb"></span>
-            <span class="vault-text">{{ vaultStatus?.isSealed ? 'SEALED' : 'UNSEALED' }}</span>
-          </div>
-
-          <div
-            class="lore-score-badge"
-            :class="{ warning: consistencyScore < 80, danger: consistencyScore < 50 }"
-            title="Каноническая согласованность сюжета"
-            @click="showLore = !showLore"
-          >
-            <span>LOR</span>
-            <b>{{ Math.round(consistencyScore) }}%</b>
-          </div>
-
-          <button
-            class="tactile-icon-btn"
-            :class="{ active: showLore }"
-            title="Страж лора и поиск смысла"
-            @click="showLore = !showLore"
-          >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
-          </button>
-
-          <button
-            class="tactile-icon-btn"
-            :class="{ active: showVault }"
-            title="Управление криптосейфом"
-            @click="showVault = !showVault"
-          >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          </button>
-
-          <button
-            class="tactile-icon-btn"
-            :class="{ active: showAnalytics }"
-            title="Лингвистическая телеметрия"
-            @click="showAnalytics = !showAnalytics"
-          >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          </button>
-
-          <button
-            v-if="hasActive"
-            class="tactile-icon-btn btn-danger-tone"
-            :title="hasActive ? 'Удалить сцену' : 'Очистить черновик'"
-            @click="emit('delete')"
-          >
-            <svg class="ui-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
-        </div>
+      <div v-if="isVaultLocked && !compactKeyboardMode" class="vault-locked-banner" @click="activeDrawer = 'vault'">
+        <span>🔒</span>
+        <span>{{ t("studio.vaultLockedBanner") }}</span>
       </div>
 
-      <div v-if="anomalies.length > 0" class="lore-alert-strip" @click="showLore = true">
+      <div v-if="anomalies.length > 0 && !compactKeyboardMode" class="lore-alert-strip" @click="activeDrawer = 'lore'">
         <span class="alert-icon">⚠️</span>
-        <span class="alert-msg">Обнаружено {{ anomalies.length }} противоречий с каноном вселенной.</span>
-        <span class="alert-action">Исследовать →</span>
+        <span class="alert-msg">{{ t("studio.loreAlert", { count: anomalies.length }) }}</span>
+        <span class="alert-action">{{ t("studio.loreInspect") }}</span>
       </div>
 
-      <div class="quantum-tools-strip">
-        <div class="tools-horizontal-lane">
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n# ', '\n', 'Заголовок 1')">H1</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n## ', '\n', 'Заголовок 2')">H2</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n### ', '\n', 'Заголовок 3')">H3</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('**', '**', 'жирный текст')"><b>B</b></button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('*', '*', 'курсивный текст')"><i>I</i></button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('~~', '~~', 'зачеркнутый')"><s>S</s></button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('==', '==', 'выделение')">Mark</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('||', '||', 'секретный текст')">Спойлер</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('[[', ']]', 'Сущность')">[[Wiki]]</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('@', ' ', 'Персонаж')">@Персонаж</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n> «', '»\n', 'Прямая речь')">«Прямая речь»</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- [ ] ', '\n', 'Задача')">☑ Чеклист</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n- ', '\n', 'Пункт')">• Список</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('`', '`', 'код')">&lt;/&gt;</button>
-          <button class="tool-chip-btn" @mousedown.prevent="wrapSelection('\n\n***\n\n', '', '')">Астеризм ***</button>
-        </div>
-      </div>
+      <StudioToolbar v-if="!isVaultLocked && !compactKeyboardMode" @insert="wrapSelection" />
 
       <div class="editor-viewport-well">
         <textarea
           ref="textareaRef"
           v-model="content"
+          :readonly="isVaultLocked"
           :class="['enterprise-textarea', { 'smooth-caret': settings.smoothCaret }]"
           :style="{
             fontFamily: settings.editorFontFamily,
             lineHeight: settings.editorLineHeight,
             fontSize: `${fontSize}px`,
           }"
-          placeholder="Начните писать сцену или введите [[ для ссылки на сущность..."
+          :placeholder="t('studio.editorPlaceholder')"
           autofocus
           @input="handleTextareaInput"
           @keydown="handleTextareaKeydown"
-          @mousemove="handleTextareaMousemove"
-          @mouseleave="handleTextareaMouseleave"
+          @click="handleTextareaCursorEvent"
+          @keyup="handleTextareaCursorEvent"
+          @blur="dismissHover"
         ></textarea>
 
         <LspAutocomplete
-          v-if="isSuggestionsOpen"
+          v-if="isSuggestionsOpen && !isVaultLocked"
           :suggestions="suggestions"
           :selected-index="selectedIndex"
           @hover-index="selectedIndex = $event"
@@ -401,47 +467,61 @@ onMounted(() => {
         />
 
         <AnalyticsDrawer
-          v-if="showAnalytics"
+          v-if="activeDrawer === 'analytics'"
           :metrics="metrics"
-          @close="showAnalytics = false"
+          @close="activeDrawer = null"
         />
 
         <LoreDrawer
-          v-if="showLore"
+          v-if="activeDrawer === 'lore'"
           :consistency-score="consistencyScore"
+          :verified-claims-count="verifiedClaimsCount"
           :anomalies="anomalies"
           :semantic-results="semanticResults"
           :is-analyzing="isLoreAnalyzing"
-          @close="showLore = false"
+          @close="activeDrawer = null"
           @dismiss-anomaly="dismissAnomaly"
           @search-semantic="executeSemanticSearch"
           @select-story-by-id="emit('selectStoryById', $event)"
         />
 
         <VaultDrawer
-          v-if="showVault"
+          v-if="activeDrawer === 'vault'"
           :vault-status="vaultStatus"
+          :snapshots="snapshots"
           :is-sealing="isSealing"
+          :is-unlocking="isUnlocking"
           :is-verifying="isVerifying"
+          :is-loading-snapshots="isLoadingSnapshots"
           :verification-result="verificationResult"
-          @close="showVault = false"
+          :vault-error="vaultError"
+          :has-active-story="!!storyId"
+          @close="activeDrawer = null"
           @seal="handleSealVault"
+          @unlock="handleUnlockVault"
           @verify="verifyVaultIntegrity"
+          @create-snapshot="handleCreateSnapshot"
+          @restore-snapshot="handleRestoreSnapshot"
+          @delete-snapshot="deleteSnapshot"
         />
       </div>
 
-      <footer class="editor-bottom-hud">
+      <footer v-show="!compactKeyboardMode" class="editor-bottom-hud">
         <div class="hud-goal-track">
-          <span class="hud-label">Слов: {{ metrics.wordCount }}</span>
-          <span class="hud-label">Символов: {{ metrics.charCount }}</span>
-          <span class="hud-label">Канон: {{ Math.round(consistencyScore) }}%</span>
+          <span class="hud-label">{{ t("studio.wordsStat", { count: metrics.wordCount }) }}</span>
+          <span class="hud-label">{{ t("studio.charsStat", { count: metrics.charCount }) }}</span>
+          <span class="hud-label">{{ t("studio.ropeLinesStat", { count: ropeTotalLines }) }}</span>
+          <span class="hud-label">{{ t("studio.canonStat", { score: Math.round(consistencyScore) }) }}</span>
         </div>
-        <span class="hud-metric">Сейф: {{ vaultStatus?.isSealed ? 'Защищен' : 'Активен' }} • Оператор: {{ operator }}</span>
+        <span class="hud-metric">
+          {{ t("studio.ropeHashStat", { hash: ropeRevisionHash ? ropeRevisionHash.slice(0, 8) : "00000000" }) }} •
+          {{ t("studio.operatorLabel", { status: vaultStatus?.isSealed ? t("studio.vaultProtected") : t("studio.vaultActive"), operator }) }}
+        </span>
       </footer>
     </div>
 
     <div
-      v-if="studioMode === 'split' || studioMode === 'preview' || mobileActiveTab === 'preview'"
+      v-if="(studioMode === 'split' || studioMode === 'preview' || mobileActiveTab === 'preview') && !compactKeyboardMode"
       v-show="mobileActiveTab === 'preview' || studioMode === 'split' || studioMode === 'preview'"
       :class="['preview-chassis', { 'full-screen-preview': studioMode === 'preview' || mobileActiveTab === 'preview' }]"
     >
@@ -455,6 +535,8 @@ onMounted(() => {
         :style="{ fontSize: `${fontSize}px` }"
         v-html="renderedHtml"
         @click="handlePreviewClick"
+        @mouseover="handlePreviewMouseover"
+        @mouseout="handlePreviewMouseout"
       ></div>
     </div>
   </section>
@@ -477,7 +559,8 @@ onMounted(() => {
 
 .dual-tab-pill {
   flex: 1;
-  padding: 8px 12px;
+  padding: 9px 12px;
+  min-height: 38px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -517,7 +600,7 @@ onMounted(() => {
 .editor-chassis {
   display: flex;
   flex-direction: column;
-  padding: 16px 22px;
+  padding: 16px max(22px, var(--safe-right)) 16px max(22px, var(--safe-left));
   gap: 10px;
   height: 100%;
   flex: 1;
@@ -526,147 +609,18 @@ onMounted(() => {
   transition: max-width 0.2s ease;
 }
 
-.editor-telemetry-header {
+.vault-locked-banner {
   display: flex;
-  gap: 12px;
   align-items: center;
-}
-
-.meta-input-capsules {
-  display: flex;
   gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.capsule-title-input {
-  flex: 3;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid var(--accent-gold);
   color: var(--text-pure);
-  padding: 0 16px;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 15px;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
   font-weight: 700;
-  outline: none;
-  min-width: 0;
-}
-
-.capsule-category-input {
-  flex: 1;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-main);
-  padding: 0 14px;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  outline: none;
-  min-width: 0;
-}
-
-.header-action-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.revision-telemetry-badge {
-  display: flex;
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  height: 42px;
-  padding: 0 10px;
-  gap: 6px;
-  font-family: var(--font-mono);
-}
-
-.rev-label {
-  font-size: 10px;
-  color: var(--accent-cyan);
-  font-weight: 800;
-}
-
-.rev-digit {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--text-pure);
-}
-
-.vault-status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  height: 42px;
-  padding: 0 12px;
   cursor: pointer;
-}
-
-.vault-orb {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent-rose);
-}
-
-.vault-status-indicator.sealed .vault-orb {
-  background: var(--accent-emerald);
-}
-
-.vault-text {
-  font-size: 11px;
-  font-weight: 800;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-}
-
-.lore-score-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--accent-emerald);
-  height: 42px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-}
-
-.lore-score-badge.warning { color: var(--accent-gold); }
-.lore-score-badge.danger { color: var(--accent-rose); }
-
-.tactile-icon-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  border-radius: 12px;
-  width: 42px;
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.tactile-icon-btn.active {
-  background: var(--accent-indigo);
-  color: #fff;
-}
-
-.btn-danger-tone:hover {
-  background: rgba(244, 63, 94, 0.2);
-  color: var(--accent-rose);
 }
 
 .lore-alert-strip {
@@ -691,36 +645,6 @@ onMounted(() => {
   font-weight: 700;
 }
 
-.quantum-tools-strip {
-  width: 100%;
-  overflow-x: auto;
-}
-
-.tools-horizontal-lane {
-  display: flex;
-  gap: 6px;
-  width: max-content;
-}
-
-.tool-chip-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  padding: 0 10px;
-  height: 32px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tool-chip-btn:hover {
-  border-color: var(--border-accent);
-  color: var(--text-pure);
-}
-
 .editor-viewport-well {
   flex: 1;
   position: relative;
@@ -729,7 +653,7 @@ onMounted(() => {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 18px;
   min-height: 0;
 }
 
@@ -742,6 +666,7 @@ onMounted(() => {
   outline: none;
   resize: none;
   user-select: text;
+  -webkit-overflow-scrolling: touch;
 }
 
 .enterprise-textarea.smooth-caret {
@@ -754,11 +679,14 @@ onMounted(() => {
   align-items: center;
   padding: 4px;
   font-size: 11px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .hud-goal-track {
   display: flex;
   gap: 14px;
+  flex-wrap: wrap;
 }
 
 .hud-label {
@@ -774,9 +702,10 @@ onMounted(() => {
 .preview-chassis {
   height: 100%;
   overflow-y: auto;
-  padding: 32px 42px;
+  padding: 28px max(36px, var(--safe-right)) 28px max(36px, var(--safe-left));
   background: var(--bg-card);
   user-select: text;
+  -webkit-overflow-scrolling: touch;
 }
 
 .preview-toolbar-meta {
@@ -802,7 +731,7 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .enterprise-workbench-studio {
     flex-direction: column !important;
   }
@@ -810,7 +739,7 @@ onMounted(() => {
   .mobile-dual-nav {
     display: flex !important;
     width: 100% !important;
-    padding: 8px 12px;
+    padding: 8px max(12px, var(--safe-right)) 8px max(12px, var(--safe-left));
     background: var(--bg-surface-solid);
     border-bottom: 1px solid var(--border);
     gap: 8px;
@@ -818,26 +747,18 @@ onMounted(() => {
   }
 
   .editor-chassis {
-    padding: 10px 12px;
+    padding: 8px max(10px, var(--safe-right)) 8px max(10px, var(--safe-left));
     width: 100% !important;
-  }
-
-  .editor-telemetry-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .quantum-tools-strip {
-    display: none !important;
+    border-right: none !important;
   }
 
   .editor-viewport-well {
-    padding: 14px 12px;
+    padding: 12px;
+    border-radius: 14px;
   }
 
   .preview-chassis {
-    padding: 16px 14px;
+    padding: 14px max(14px, var(--safe-right)) 24px max(14px, var(--safe-left));
     width: 100% !important;
   }
 }

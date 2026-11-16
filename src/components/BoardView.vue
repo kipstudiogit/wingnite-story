@@ -1,7 +1,11 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { computed } from "vue";
-import type { StoryItem, StoryOrderUpdate } from "../types";
+import { isCodexEntityCategory } from "../constants/app";
+import type { StoryItem } from "../types";
 import { useHaptics } from "../composables/useHaptics";
+import { useI18n } from "../i18n";
 
 const { actsList, stories } = defineProps<{
   actsList: string[];
@@ -11,10 +15,12 @@ const { actsList, stories } = defineProps<{
 const emit = defineEmits<{
   (e: "select", story: StoryItem): void;
   (e: "create", category: string): void;
-  (e: "reorder", updates: StoryOrderUpdate[]): void;
+  (e: "swap", idA: string, idB: string): void;
+  (e: "moveCategory", storyId: string, targetCategory: string): void;
 }>();
 
 const { vibrateLight, vibrateSelection, vibrateSuccess } = useHaptics();
+const { t, messages } = useI18n();
 
 interface ProcessedStoryItem extends StoryItem {
   wordCount: number;
@@ -39,8 +45,9 @@ function countWords(str: string): number {
 }
 
 const resolvedActs = computed(() => {
-  if (actsList.length > 0) return actsList;
-  return ["Акт I", "Акт II", "Акт III", "Кульминация"];
+  const defaults = messages.value.board.defaultActs;
+  const narrativeActs = actsList.filter((a) => !isCodexEntityCategory(a));
+  return Array.from(new Set<string>([...defaults, ...narrativeActs]));
 });
 
 const storiesByAct = computed(() => {
@@ -49,6 +56,9 @@ const storiesByAct = computed(() => {
     map.set(act, []);
   }
   for (const s of stories) {
+    if (isCodexEntityCategory(s.category)) {
+      continue;
+    }
     const targetKey = map.has(s.category) ? s.category : resolvedActs.value[0];
     const list = map.get(targetKey);
     if (list) {
@@ -70,39 +80,20 @@ const storiesByAct = computed(() => {
 function moveCardUp(act: string, index: number) {
   const list = storiesByAct.value.get(act);
   if (!list || index <= 0) return;
-  const itemA = list[index];
-  const itemB = list[index - 1];
-
-  const updates: StoryOrderUpdate[] = [
-    { id: itemA.id, sortOrder: itemB.sortOrder, category: act },
-    { id: itemB.id, sortOrder: itemA.sortOrder, category: act },
-  ];
   vibrateSuccess();
-  emit("reorder", updates);
+  emit("swap", list[index].id, list[index - 1].id);
 }
 
 function moveCardDown(act: string, index: number) {
   const list = storiesByAct.value.get(act);
   if (!list || index >= list.length - 1) return;
-  const itemA = list[index];
-  const itemB = list[index + 1];
-
-  const updates: StoryOrderUpdate[] = [
-    { id: itemA.id, sortOrder: itemB.sortOrder, category: act },
-    { id: itemB.id, sortOrder: itemA.sortOrder, category: act },
-  ];
   vibrateSuccess();
-  emit("reorder", updates);
+  emit("swap", list[index].id, list[index + 1].id);
 }
 
 function handleActMove(story: StoryItem, targetAct: string) {
-  const targetList = storiesByAct.value.get(targetAct) || [];
-  const maxOrder = targetList.reduce((max, s) => Math.max(max, s.sortOrder), 0);
-  const updates: StoryOrderUpdate[] = [
-    { id: story.id, sortOrder: maxOrder + 1, category: targetAct },
-  ];
   vibrateSuccess();
-  emit("reorder", updates);
+  emit("moveCategory", story.id, targetAct);
 }
 </script>
 
@@ -117,7 +108,7 @@ function handleActMove(story: StoryItem, targetAct: string) {
           </div>
           <div class="act-header-right">
             <span class="act-badge-counter">{{ storiesByAct.get(act)?.length ?? 0 }}</span>
-            <button class="btn-act-add" title="Добавить сцену в этот акт" @click="vibrateLight(); emit('create', act)">+</button>
+            <button class="btn-act-add" :title="t('board.addSceneTooltip')" @click="vibrateLight(); emit('create', act)">+</button>
           </div>
         </header>
 
@@ -134,7 +125,7 @@ function handleActMove(story: StoryItem, targetAct: string) {
                 <button
                   class="btn-order-arrow"
                   :disabled="idx === 0"
-                  title="Поднять выше"
+                  :title="t('board.moveUpTooltip')"
                   @click="moveCardUp(act, idx)"
                 >
                   ▲
@@ -142,7 +133,7 @@ function handleActMove(story: StoryItem, targetAct: string) {
                 <button
                   class="btn-order-arrow"
                   :disabled="idx === (storiesByAct.get(act)?.length ?? 0) - 1"
-                  title="Опустить ниже"
+                  :title="t('board.moveDownTooltip')"
                   @click="moveCardDown(act, idx)"
                 >
                   ▼
@@ -150,14 +141,14 @@ function handleActMove(story: StoryItem, targetAct: string) {
               </div>
             </div>
 
-            <h4 class="card-heading">{{ item.title || 'Сцена без названия' }}</h4>
-            <p class="card-snippet">{{ item.excerpt || 'Текст сцены...' }}...</p>
+            <h4 class="card-heading">{{ item.title || t("common.untitled") }}</h4>
+            <p class="card-snippet">{{ item.excerpt || "..." }}</p>
 
             <div class="card-bottom-telemetry">
               <div class="card-meter-track">
                 <div class="card-meter-fill" :style="{ width: `${item.progressPercent}%` }"></div>
               </div>
-              <span class="card-meter-label">{{ item.wordCount }} сл.</span>
+              <span class="card-meter-label">{{ item.wordCount }} {{ t("board.wordsShort") }}</span>
             </div>
 
             <div class="card-mobile-act-mover" @click.stop>
@@ -167,15 +158,17 @@ function handleActMove(story: StoryItem, targetAct: string) {
                 @change="handleActMove(item, ($event.target as HTMLSelectElement).value)"
               >
                 <option v-for="targetAct in resolvedActs" :key="targetAct" :value="targetAct">
-                  Переместить: {{ targetAct }}
+                  {{ t("board.moveToPrefix") }} {{ targetAct }}
                 </option>
               </select>
             </div>
           </div>
 
-          <div v-if="(storiesByAct.get(act) ?? []).length === 0" class="empty-column-box">
-            <p>Нет сцен в блоке</p>
-            <button class="btn-create-card-inline" @click="vibrateLight(); emit('create', act)">+ Новая сцена</button>
+          <div v-if="(storiesByAct.get(act)?.length ?? 0) === 0" class="empty-column-box">
+            <p>{{ t("board.emptyColumn") }}</p>
+            <button class="btn-create-card-inline" @click="vibrateLight(); emit('create', act)">
+              {{ t("board.addInline") }}
+            </button>
           </div>
         </div>
       </div>
@@ -187,22 +180,24 @@ function handleActMove(story: StoryItem, targetAct: string) {
 .stage-board {
   flex: 1;
   overflow-x: auto;
-  padding: 32px;
+  overflow-y: hidden;
+  padding: 24px max(24px, var(--safe-right)) 24px max(24px, var(--safe-left));
   display: flex;
+  -webkit-overflow-scrolling: touch;
 }
 
 .board-acts-track {
   display: flex;
-  gap: 26px;
+  gap: 20px;
   height: 100%;
   align-items: flex-start;
 }
 
 .board-act-column {
-  width: 350px;
+  width: 340px;
   background: var(--bg-surface-solid);
   border: 1px solid var(--border);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-quantum);
   border-radius: 18px;
   display: flex;
   flex-direction: column;
@@ -212,18 +207,19 @@ function handleActMove(story: StoryItem, targetAct: string) {
 }
 
 .act-col-header {
-  padding: 16px 20px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-card);
 }
 
 .act-title-wrapper {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .act-status-flame {
@@ -231,13 +227,17 @@ function handleActMove(story: StoryItem, targetAct: string) {
   height: 8px;
   border-radius: 50%;
   background: var(--accent-cyan);
-  box-shadow: 0 0 14px var(--accent-cyan-glow);
+  box-shadow: 0 0 12px var(--accent-cyan-glow);
+  flex-shrink: 0;
 }
 
 .act-name {
   font-size: 14px;
   font-weight: 800;
   color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .act-header-right {
@@ -247,7 +247,7 @@ function handleActMove(story: StoryItem, targetAct: string) {
 }
 
 .act-badge-counter {
-  background: var(--bg-card);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   padding: 3px 10px;
   border-radius: 999px;
@@ -261,9 +261,9 @@ function handleActMove(story: StoryItem, targetAct: string) {
   background: var(--accent-indigo);
   border: none;
   color: #fff;
-  border-radius: 6px;
-  width: 26px;
-  height: 26px;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
   font-weight: 800;
   cursor: pointer;
   display: flex;
@@ -272,18 +272,19 @@ function handleActMove(story: StoryItem, targetAct: string) {
 }
 
 .act-cards-scroller {
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .prismatic-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 16px 18px;
+  padding: 14px 16px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -319,10 +320,10 @@ function handleActMove(story: StoryItem, targetAct: string) {
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
-  width: 24px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 9px;
+  width: 28px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -389,9 +390,9 @@ function handleActMove(story: StoryItem, targetAct: string) {
   border: 1px solid var(--border);
   color: var(--text-muted);
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 5px 8px;
   outline: none;
   cursor: pointer;
 }
@@ -411,10 +412,26 @@ function handleActMove(story: StoryItem, targetAct: string) {
   background: transparent;
   border: 1px dashed var(--border);
   color: var(--accent-cyan);
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .stage-board {
+    padding: 12px max(12px, var(--safe-right)) 16px max(12px, var(--safe-left));
+    scroll-snap-type: x mandatory;
+  }
+
+  .board-acts-track {
+    gap: 12px;
+  }
+
+  .board-act-column {
+    width: min(84vw, 330px);
+    scroll-snap-align: center;
+  }
 }
 </style>

@@ -1,16 +1,22 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import type { EnterpriseStoryItem, FtsResultItem } from "../types";
+import { useI18n } from "../i18n";
 
-const { stories } = defineProps<{
+const { stories, projectId } = defineProps<{
   stories: EnterpriseStoryItem[];
+  projectId: string;
 }>();
 
 const emit = defineEmits<{
   (e: "select", story: EnterpriseStoryItem): void;
   (e: "close"): void;
 }>();
+
+const { t } = useI18n();
 
 const search = ref("");
 const selectedIndex = ref(0);
@@ -27,7 +33,10 @@ watch(search, (query) => {
   }
   searchTimer = window.setTimeout(async () => {
     try {
-      ftsResults.value = await invoke<FtsResultItem[]>("execute_fts_search", { query: q });
+      ftsResults.value = await invoke<FtsResultItem[]>("execute_fts_search", {
+        query: q,
+        projectId,
+      });
       selectedIndex.value = 0;
     } catch {
       ftsResults.value = [];
@@ -46,7 +55,7 @@ const displayItems = computed(() => {
         snippet: res.snippet,
         story: match ?? {
           id: res.id,
-          projectId: "default_project",
+          projectId,
           title: res.title,
           category: res.category,
           content: "",
@@ -105,6 +114,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeyDown);
+  if (searchTimer) clearTimeout(searchTimer);
 });
 </script>
 
@@ -117,14 +127,14 @@ onUnmounted(() => {
           ref="inputRef"
           v-model="search"
           class="cmd-input"
-          placeholder="Полнотекстовый поиск FTS5 по всей книге..."
+          :placeholder="t('palette.placeholder')"
         />
-        <span class="cmd-shortcut-tag">ESC</span>
+        <button class="cmd-shortcut-tag" @click="emit('close')">ESC</button>
       </div>
 
       <div class="cmd-meta-bar">
-        <span>Результаты FTS5: {{ displayItems.length }}</span>
-        <span>Навигация: ↑ ↓ &nbsp;•&nbsp; Выбор: ↵</span>
+        <span>{{ t("palette.resultsCount", { count: displayItems.length }) }}</span>
+        <span class="cmd-hint-desktop">{{ t("palette.hint") }}</span>
       </div>
 
       <div class="cmd-list">
@@ -145,7 +155,7 @@ onUnmounted(() => {
         </div>
 
         <div v-if="displayItems.length === 0" class="cmd-empty">
-          Совпадений в базе данных не обнаружено
+          {{ t("palette.empty") }}
         </div>
       </div>
     </div>
@@ -156,23 +166,23 @@ onUnmounted(() => {
 .cmd-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(14px);
-  z-index: 200;
+  z-index: 550;
   display: flex;
   justify-content: center;
-  padding-top: 10vh;
+  align-items: flex-start;
+  padding: max(48px, calc(var(--safe-top) + 24px)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
 }
 
 .cmd-modal {
-  width: 90%;
-  max-width: 650px;
+  width: min(100%, 650px);
   background: var(--bg-surface-solid);
   border: 1px solid var(--border-strong);
   border-radius: 18px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
   overflow: hidden;
-  max-height: 480px;
+  max-height: min(74dvh, 480px);
   display: flex;
   flex-direction: column;
 }
@@ -180,9 +190,9 @@ onUnmounted(() => {
 .cmd-search-row {
   display: flex;
   align-items: center;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  gap: 12px;
+  gap: 10px;
 }
 
 .cmd-icon {
@@ -192,6 +202,7 @@ onUnmounted(() => {
 
 .cmd-input {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   font-size: 15px;
@@ -202,21 +213,22 @@ onUnmounted(() => {
 
 .cmd-shortcut-tag {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-muted);
   background: var(--bg-card);
+  cursor: pointer;
 }
 
 .cmd-meta-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 18px;
-  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 16px;
+  background: var(--bg-input);
   border-bottom: 1px solid var(--border-subtle);
   font-size: 11px;
   color: var(--text-dim);
@@ -226,6 +238,7 @@ onUnmounted(() => {
 .cmd-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 8px;
 }
 
@@ -241,7 +254,7 @@ onUnmounted(() => {
 .cmd-item:hover,
 .cmd-item.active {
   background: var(--bg-card-hover);
-  box-shadow: 0 0 16px var(--accent-indigo-glow);
+  box-shadow: 0 0 14px var(--accent-indigo-glow);
 }
 
 .cmd-item-main {
@@ -255,22 +268,27 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .item-title {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-pure);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item-badge {
   font-size: 10px;
   font-weight: 700;
   color: var(--accent-cyan);
-  background: rgba(6, 182, 212, 0.12);
+  background: var(--bg-card);
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(6, 182, 212, 0.25);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .item-snippet {
@@ -281,9 +299,6 @@ onUnmounted(() => {
 
 .item-snippet :deep(b) {
   color: var(--accent-gold);
-  background: rgba(245, 158, 11, 0.15);
-  padding: 0 2px;
-  border-radius: 3px;
 }
 
 .cmd-empty {
@@ -291,5 +306,11 @@ onUnmounted(() => {
   text-align: center;
   font-size: 13px;
   color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .cmd-hint-desktop {
+    display: none;
+  }
 }
 </style>

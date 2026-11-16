@@ -1,7 +1,9 @@
 {
   "name": "wingnite-story",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.1",
+  "license": "GPL-3.0-only",
+  "author": "Kettle Ignition Power Studio (K. I. P. Studio)",
   "type": "module",
   "scripts": {
     "dev": "vite",

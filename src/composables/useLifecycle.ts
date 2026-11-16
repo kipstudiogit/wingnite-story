@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -9,7 +12,8 @@ export function useLifecycle(onSuspendCallback?: () => Promise<void> | void) {
       }
       try {
         await invoke("app_checkpoint_wal");
-      } catch {}
+      } catch {
+      }
     }
   }
 
@@ -19,7 +23,8 @@ export function useLifecycle(onSuspendCallback?: () => Promise<void> | void) {
     }
     try {
       await invoke("app_checkpoint_wal");
-    } catch {}
+    } catch {
+    }
   }
 
   onMounted(() => {

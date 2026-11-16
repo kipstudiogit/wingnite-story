@@ -1,0 +1,20 @@
+/* Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) */
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
+}

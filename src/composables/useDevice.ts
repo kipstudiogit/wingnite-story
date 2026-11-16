@@ -1,10 +1,23 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "../i18n";
+
+export interface ExportResult {
+  saved: boolean;
+  message: string;
+}
 
 export function useDevice() {
+  const { t } = useI18n();
+
   const windowWidth = ref(window.innerWidth);
   const windowHeight = ref(window.innerHeight);
-  const viewportHeight = ref(window.visualViewport ? window.visualViewport.height : window.innerHeight);
+  const viewportHeight = ref(
+    window.visualViewport ? window.visualViewport.height : window.innerHeight
+  );
   const isTouchDevice = ref(false);
   const isKeyboardOpen = ref(false);
   const keyboardHeight = ref(0);
@@ -56,33 +69,46 @@ export function useDevice() {
     filename: string,
     content: string,
     mimeType = "text/plain"
-  ): Promise<string> {
-    const isMobileEnv = isMobile.value;
-
-    if (isMobileEnv && typeof navigator.share === "function") {
-      try {
-        const file = new File([content], filename, { type: mimeType });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: filename,
-            files: [file],
-          });
-          return `Файл "${filename}" успешно передан в систему`;
-        }
-      } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          return "Экспорт отменен пользователем";
-        }
-      }
-    }
-
+  ): Promise<ExportResult> {
     try {
-      const savedPath = await invoke<string>("save_export_file", {
+      const savedPath = await invoke<string | null>("save_export_file", {
         filename,
         content,
       });
-      return `Сохранено на устройстве: ${savedPath}`;
+      if (savedPath === null) {
+        return {
+          saved: false,
+          message: t("notifications.exportCanceled"),
+        };
+      }
+      return {
+        saved: true,
+        message: t("notifications.exportSavedPath", { path: savedPath }),
+      };
     } catch {
+      if (isMobile.value && typeof navigator.share === "function") {
+        try {
+          const file = new File([content], filename, { type: mimeType });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: filename,
+              files: [file],
+            });
+            return {
+              saved: true,
+              message: t("notifications.exportShared", { filename }),
+            };
+          }
+        } catch (err) {
+          if ((err as Error).name === "AbortError") {
+            return {
+              saved: false,
+              message: t("notifications.exportCanceled"),
+            };
+          }
+        }
+      }
+
       const blob = new Blob([content], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -90,7 +116,10 @@ export function useDevice() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      return `Файл "${filename}" скачан`;
+      return {
+        saved: true,
+        message: t("notifications.exportDownloaded", { filename }),
+      };
     }
   }
 
@@ -117,7 +146,7 @@ export function useDevice() {
   });
 
   const isMobile = computed(() => {
-    return windowWidth.value <= 820 || (isTouchDevice.value && windowWidth.value <= 1024);
+    return windowWidth.value <= 900 || (isTouchDevice.value && windowWidth.value <= 1080);
   });
 
   return {

@@ -1,5 +1,8 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
-import type { EnterpriseStoryItem, StoryOrderUpdate } from "../../types";
+import type { EnterpriseStoryItem } from "../../types";
+import { useI18n } from "../../i18n";
 
 const {
   isOpen,
@@ -21,7 +24,7 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "selectStory", story: EnterpriseStoryItem): void;
   (e: "newDraft"): void;
-  (e: "reorder", updates: StoryOrderUpdate[]): void;
+  (e: "swap", idA: string, idB: string): void;
   (e: "exportWstory"): void;
   (e: "importWstory"): void;
   (e: "exportHtml"): void;
@@ -30,24 +33,16 @@ const emit = defineEmits<{
   (e: "importTxt"): void;
 }>();
 
+const { t, formatNumber } = useI18n();
+
 function moveStoryUp(index: number) {
   if (index <= 0) return;
-  const a = stories[index];
-  const b = stories[index - 1];
-  emit("reorder", [
-    { id: a.id, sortOrder: b.sortOrder, category: a.category },
-    { id: b.id, sortOrder: a.sortOrder, category: b.category },
-  ]);
+  emit("swap", stories[index].id, stories[index - 1].id);
 }
 
 function moveStoryDown(index: number) {
   if (index >= stories.length - 1) return;
-  const a = stories[index];
-  const b = stories[index + 1];
-  emit("reorder", [
-    { id: a.id, sortOrder: b.sortOrder, category: a.category },
-    { id: b.id, sortOrder: a.sortOrder, category: b.category },
-  ]);
+  emit("swap", stories[index].id, stories[index + 1].id);
 }
 </script>
 
@@ -58,20 +53,22 @@ function moveStoryDown(index: number) {
     <div class="drawer-header">
       <div class="brand-crest">
         <svg class="crest-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg>
-        <span>Оглавление книги</span>
+        <span>{{ t("toc.title") }}</span>
       </div>
-      <button class="btn-drawer-close" title="Закрыть" @click="emit('close')">✕</button>
+      <button class="btn-drawer-close" :title="t('common.close')" @click="emit('close')">✕</button>
     </div>
 
     <div class="drawer-progress">
       <div class="meter-info">
-        <span>Прогресс рукописи</span>
+        <span>{{ t("toc.manuscriptProgress") }}</span>
         <span>{{ goalPercent }}%</span>
       </div>
       <div class="meter-track">
         <div class="meter-fill" :style="{ width: `${goalPercent}%` }"></div>
       </div>
-      <div class="meter-sub">{{ totalSystemWords }} / {{ targetBookGoal }} слов</div>
+      <div class="meter-sub">
+        {{ t("toc.wordsProgress", { current: formatNumber(totalSystemWords), goal: formatNumber(targetBookGoal) }) }}
+      </div>
     </div>
 
     <div class="drawer-scrollable-list">
@@ -83,35 +80,35 @@ function moveStoryDown(index: number) {
       >
         <span class="chapter-idx">{{ String(idx + 1).padStart(2, "0") }}</span>
         <div class="chapter-info">
-          <span class="chapter-title">{{ item.title || 'Сцена без названия' }}</span>
+          <span class="chapter-title">{{ item.title || t("common.untitled") }}</span>
           <span class="chapter-cat">{{ item.category }} • r{{ item.revision }}</span>
         </div>
         <div class="chapter-reorder-pills" @click.stop>
-          <button class="btn-toc-arrow" :disabled="idx === 0" title="Поднять сцену выше" @click="moveStoryUp(idx)">▲</button>
-          <button class="btn-toc-arrow" :disabled="idx === stories.length - 1" title="Опустить сцену ниже" @click="moveStoryDown(idx)">▼</button>
+          <button class="btn-toc-arrow" :disabled="idx === 0" :title="t('toc.moveUp')" @click="moveStoryUp(idx)">▲</button>
+          <button class="btn-toc-arrow" :disabled="idx === stories.length - 1" :title="t('toc.moveDown')" @click="moveStoryDown(idx)">▼</button>
         </div>
       </div>
 
       <div v-if="stories.length === 0" class="toc-empty">
-        <span>В книге пока нет сцен</span>
+        <span>{{ t("toc.empty") }}</span>
       </div>
     </div>
 
     <div class="drawer-footer">
       <button class="btn-drawer-action primary" @click="emit('newDraft')">
-        <span>+ Новая сцена</span>
+        <span>{{ t("toc.newScene") }}</span>
       </button>
       <div class="footer-btn-grid">
-        <button class="btn-drawer-sub" @click="emit('importTxt')">Импорт .TXT</button>
-        <button class="btn-drawer-sub" @click="emit('exportTxt')">Экспорт .TXT</button>
-        <button class="btn-drawer-sub" @click="emit('importWstory')">Импорт .WSTORY</button>
-        <button class="btn-drawer-sub" @click="emit('exportWstory')">Экспорт .WSTORY</button>
+        <button class="btn-drawer-sub" @click="emit('importTxt')">{{ t("toc.importTxt") }}</button>
+        <button class="btn-drawer-sub" @click="emit('exportTxt')">{{ t("toc.exportTxt") }}</button>
+        <button class="btn-drawer-sub" @click="emit('importWstory')">{{ t("toc.importWstory") }}</button>
+        <button class="btn-drawer-sub" @click="emit('exportWstory')">{{ t("toc.exportWstory") }}</button>
       </div>
       <button class="btn-drawer-action" @click="emit('exportHtml')">
-        <span>Собрать издание (HTML)</span>
+        <span>{{ t("toc.buildHtml") }}</span>
       </button>
       <button class="btn-drawer-action" @click="emit('exportMd')">
-        <span>Экспорт всей книги (Markdown)</span>
+        <span>{{ t("toc.exportMarkdown") }}</span>
       </button>
     </div>
   </aside>

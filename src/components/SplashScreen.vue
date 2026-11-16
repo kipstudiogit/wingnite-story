@@ -1,5 +1,8 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from "vue";
+import { useI18n } from "../i18n";
 
 const { isReady } = defineProps<{
   isReady: boolean;
@@ -9,20 +12,16 @@ const emit = defineEmits<{
   (e: "finish"): void;
 }>();
 
+const { t, messages } = useI18n();
+
 const progress = ref(0);
 const telemetryIndex = ref(0);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
-const telemetryLogs = [
-  "Инициализация квантового ядра SQLite WAL...",
-  "Синхронизация FTS5 и семантической матрицы лора...",
-  "Калибровка хронологии и тензора напряжения...",
-  "Верификация криптографического сейфа Merkle Tree...",
-  "Полномочия подтверждены. Студия готова к работе.",
-];
-
 let animationId: number | null = null;
 let progressInterval: number | null = null;
+let finishTimeout: number | null = null;
+let hasFinished = false;
 
 interface StarParticle {
   x: number;
@@ -31,14 +30,13 @@ interface StarParticle {
   baseRadius: number;
   alpha: number;
   speed: number;
-  angle: number;
 }
 
 let stars: StarParticle[] = [];
 
 function initStarfield(width: number, height: number) {
   stars = [];
-  const count = Math.min(100, Math.floor((width * height) / 12000));
+  const count = Math.min(90, Math.floor((width * height) / 14000));
   for (let i = 0; i < count; i++) {
     stars.push({
       x: (Math.random() - 0.5) * width,
@@ -47,7 +45,6 @@ function initStarfield(width: number, height: number) {
       baseRadius: Math.random() * 1.8 + 0.6,
       alpha: Math.random() * 0.7 + 0.3,
       speed: Math.random() * 0.8 + 0.3,
-      angle: Math.random() * Math.PI * 2,
     });
   }
 }
@@ -72,11 +69,9 @@ function renderCanvas() {
   ctx.fillStyle = radialGradient;
   ctx.fillRect(0, 0, w, h);
 
-  const projectedStars: { px: number; py: number; alpha: number; radius: number }[] = [];
-
   for (let i = 0; i < stars.length; i++) {
     const s = stars[i];
-    s.z -= s.speed * 2.2;
+    s.z -= s.speed * 2.4;
     if (s.z <= 10) {
       s.z = 800;
       s.x = (Math.random() - 0.5) * w;
@@ -89,42 +84,41 @@ function renderCanvas() {
 
     if (px >= 0 && px <= w && py >= 0 && py <= h) {
       const radius = s.baseRadius * k * 0.8;
-      projectedStars.push({ px, py, alpha: s.alpha, radius });
-
       ctx.beginPath();
       ctx.arc(px, py, radius, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(56, 189, 248, ${s.alpha * Math.min(1, k)})`;
-      ctx.shadowColor = "#38bdf8";
-      ctx.shadowBlur = 6;
       ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-  }
-
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i < projectedStars.length; i++) {
-    for (let j = i + 1; j < projectedStars.length; j++) {
-      const p1 = projectedStars[i];
-      const p2 = projectedStars[j];
-      const dx = p1.px - p2.px;
-      const dy = p1.py - p2.py;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 85) {
-        const lineAlpha = (1 - dist / 85) * 0.18 * Math.min(p1.alpha, p2.alpha);
-        ctx.strokeStyle = `rgba(99, 102, 241, ${lineAlpha})`;
-        ctx.beginPath();
-        ctx.moveTo(p1.px, p1.py);
-        ctx.lineTo(p2.px, p2.py);
-        ctx.stroke();
-      }
     }
   }
 
   animationId = requestAnimationFrame(renderCanvas);
 }
 
+function triggerFinish() {
+  if (hasFinished) return;
+  hasFinished = true;
+  progress.value = 100;
+  telemetryIndex.value = 4;
+  if (progressInterval) {
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+  finishTimeout = window.setTimeout(() => {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+    emit("finish");
+  }, 180);
+}
+
 function handleProgressTick() {
+  if (isReady) {
+    progress.value = Math.min(100, progress.value + 34);
+  } else if (progress.value < 88) {
+    progress.value += 4;
+  }
+
   if (progress.value < 25) {
     telemetryIndex.value = 0;
   } else if (progress.value < 50) {
@@ -137,28 +131,16 @@ function handleProgressTick() {
     telemetryIndex.value = 4;
   }
 
-  if (progress.value < 90) {
-    progress.value += 2;
-  } else if (isReady) {
-    progress.value = 100;
-    telemetryIndex.value = 4;
-    if (progressInterval) clearInterval(progressInterval);
-    setTimeout(() => {
-      emit("finish");
-    }, 450);
+  if (isReady && progress.value >= 100) {
+    triggerFinish();
   }
 }
 
 watch(
   () => isReady,
   (ready) => {
-    if (ready && progress.value >= 90) {
-      progress.value = 100;
-      telemetryIndex.value = 4;
-      if (progressInterval) clearInterval(progressInterval);
-      setTimeout(() => {
-        emit("finish");
-      }, 450);
+    if (ready) {
+      triggerFinish();
     }
   }
 );
@@ -171,12 +153,17 @@ onMounted(() => {
     initStarfield(canvas.width, canvas.height);
     renderCanvas();
   }
-  progressInterval = window.setInterval(handleProgressTick, 35);
+  if (isReady) {
+    triggerFinish();
+    return;
+  }
+  progressInterval = window.setInterval(handleProgressTick, 25);
 });
 
 onUnmounted(() => {
   if (animationId) cancelAnimationFrame(animationId);
   if (progressInterval) clearInterval(progressInterval);
+  if (finishTimeout) clearTimeout(finishTimeout);
 });
 </script>
 
@@ -201,10 +188,10 @@ onUnmounted(() => {
       </div>
 
       <div class="brand-monolith-block">
-        <h1 class="brand-prime-title">WINGNITE STORY</h1>
+        <h1 class="brand-prime-title">{{ t("common.appName").toUpperCase() }}</h1>
         <div class="brand-subline">
           <span class="subline-bullet">✦</span>
-          <span>NARRATIVE WORKBENCH ENTERPRISE</span>
+          <span>{{ t("splash.subtitle") }}</span>
           <span class="subline-bullet">✦</span>
         </div>
       </div>
@@ -217,7 +204,7 @@ onUnmounted(() => {
         </div>
 
         <div class="telemetry-status-row">
-          <span class="status-stream-text">{{ telemetryLogs[telemetryIndex] }}</span>
+          <span class="status-stream-text">{{ messages.splash.logs[telemetryIndex] }}</span>
           <span class="status-counter-text">{{ progress }}%</span>
         </div>
       </div>
@@ -386,7 +373,7 @@ onUnmounted(() => {
   background: linear-gradient(90deg, #6366f1 0%, #06b6d4 65%, #38bdf8 100%);
   border-radius: 999px;
   position: relative;
-  transition: width 0.15s ease-out;
+  transition: width 0.12s ease-out;
   box-shadow: 0 0 16px rgba(6, 182, 212, 0.9);
 }
 

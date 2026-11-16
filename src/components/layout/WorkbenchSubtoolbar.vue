@@ -1,5 +1,8 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import type { AppTab, StudioViewMode, ThemeMode } from "../../types";
+import { useI18n, type LocaleCode } from "../../i18n";
 
 const studioMode = defineModel<StudioViewMode>("studioMode", { required: true });
 const currentTheme = defineModel<ThemeMode>("currentTheme", { required: true });
@@ -16,6 +19,8 @@ const emit = defineEmits<{
   (e: "exportTxt"): void;
   (e: "getTwist"): void;
 }>();
+
+const { t, locale, availableLocales, setLocale } = useI18n();
 </script>
 
 <template>
@@ -23,33 +28,44 @@ const emit = defineEmits<{
     <div class="subtoolbar-scroller">
       <div class="subtool-left">
         <div class="zoom-stepper">
-          <button class="btn-stepper" @click="fontSize = Math.max(13, fontSize - 1)">-</button>
+          <button class="btn-stepper" :title="t('subtoolbar.fontSizeDecrease')" @click="fontSize = Math.max(13, fontSize - 1)">-</button>
           <span class="stepper-label">{{ fontSize }}px</span>
-          <button class="btn-stepper" @click="fontSize = Math.min(28, fontSize + 1)">+</button>
+          <button class="btn-stepper" :title="t('subtoolbar.fontSizeIncrease')" @click="fontSize = Math.min(28, fontSize + 1)">+</button>
         </div>
 
         <div class="theme-picker-segmented">
-          <button :class="['theme-dot-btn', { active: currentTheme === 'obsidian' }]" @click="currentTheme = 'obsidian'">Dark</button>
-          <button :class="['theme-dot-btn', { active: currentTheme === 'celestial' }]" @click="currentTheme = 'celestial'">Amber</button>
-          <button :class="['theme-dot-btn', { active: currentTheme === 'sepia' }]" @click="currentTheme = 'sepia'">Sepia</button>
-          <button :class="['theme-dot-btn', { active: currentTheme === 'paper' }]" @click="currentTheme = 'paper'">Paper</button>
-          <button :class="['theme-dot-btn', { active: currentTheme === 'oled' }]" @click="currentTheme = 'oled'">OLED</button>
+          <button :class="['theme-dot-btn', { active: currentTheme === 'obsidian' }]" @click="currentTheme = 'obsidian'">{{ t("subtoolbar.themes.obsidian") }}</button>
+          <button :class="['theme-dot-btn', { active: currentTheme === 'celestial' }]" @click="currentTheme = 'celestial'">{{ t("subtoolbar.themes.celestial") }}</button>
+          <button :class="['theme-dot-btn', { active: currentTheme === 'sepia' }]" @click="currentTheme = 'sepia'">{{ t("subtoolbar.themes.sepia") }}</button>
+          <button :class="['theme-dot-btn', { active: currentTheme === 'paper' }]" @click="currentTheme = 'paper'">{{ t("subtoolbar.themes.paper") }}</button>
+          <button :class="['theme-dot-btn', { active: currentTheme === 'oled' }]" @click="currentTheme = 'oled'">{{ t("subtoolbar.themes.oled") }}</button>
         </div>
       </div>
 
       <div v-if="currentTab === 'studio'" class="layout-segmented">
-        <button :class="['btn-layout', { active: studioMode === 'split' }]" @click="studioMode = 'split'">Сплит</button>
-        <button :class="['btn-layout', { active: studioMode === 'edit' }]" @click="studioMode = 'edit'">Редактор</button>
-        <button :class="['btn-layout', { active: studioMode === 'preview' }]" @click="studioMode = 'preview'">Превью</button>
-        <button :class="['btn-layout', { active: studioMode === 'zen' }]" @click="studioMode = 'zen'">Фокус</button>
+        <button :class="['btn-layout', { active: studioMode === 'split' }]" @click="studioMode = 'split'">{{ t("subtoolbar.modes.split") }}</button>
+        <button :class="['btn-layout', { active: studioMode === 'edit' }]" @click="studioMode = 'edit'">{{ t("subtoolbar.modes.edit") }}</button>
+        <button :class="['btn-layout', { active: studioMode === 'preview' }]" @click="studioMode = 'preview'">{{ t("subtoolbar.modes.preview") }}</button>
+        <button :class="['btn-layout', { active: studioMode === 'zen' }]" @click="studioMode = 'zen'">{{ t("subtoolbar.modes.zen") }}</button>
       </div>
 
       <div class="subtool-right-actions">
-        <button class="btn-quick-export" title="Экспорт сцены в TXT" @click="emit('exportTxt')">.TXT</button>
-        <button class="btn-quick-export" title="Экспорт рукописи в Markdown" @click="emit('exportMd')">.MD</button>
-        <button class="btn-quick-export" title="Экспорт издания в HTML" @click="emit('exportHtml')">.HTML</button>
-        <button class="btn-quick-export" title="Экспорт контейнера .wstory" @click="emit('exportWstory')">.WSTORY</button>
-        <button class="btn-generator-spark" @click="emit('getTwist')">Твист</button>
+        <select
+          class="locale-quick-select"
+          :value="locale"
+          :title="t('settings.localization.languageLabel')"
+          @change="setLocale(($event.target as HTMLSelectElement).value as LocaleCode)"
+        >
+          <option v-for="loc in availableLocales" :key="loc.code" :value="loc.code">
+            {{ loc.code.toUpperCase() }} — {{ loc.nativeName }}
+          </option>
+        </select>
+
+        <button class="btn-quick-export" @click="emit('exportTxt')">{{ t("subtoolbar.quickTxt") }}</button>
+        <button class="btn-quick-export" @click="emit('exportMd')">{{ t("subtoolbar.quickMd") }}</button>
+        <button class="btn-quick-export" @click="emit('exportHtml')">{{ t("subtoolbar.quickHtml") }}</button>
+        <button class="btn-quick-export" @click="emit('exportWstory')">{{ t("subtoolbar.quickWstory") }}</button>
+        <button class="btn-generator-spark" @click="emit('getTwist')">{{ t("nav.twist") }}</button>
       </div>
     </div>
   </div>
@@ -157,6 +173,18 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.locale-quick-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
 }
 
 .btn-quick-export {

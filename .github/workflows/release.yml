@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+# SPDX-License-Identifier: GPL-3.0-only
+
 name: Release Multiplatform
 
 on:
@@ -73,19 +76,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Wingnite Story ${{ github.ref_name }}'
+          releaseName: 'Wingnite Story 1.4.0001 (${{ github.ref_name }})'
           releaseBody: |
-            ## Wingnite Story Enterprise — Релиз ${{ github.ref_name }}
-            
-            ### Основные изменения и радикальные улучшения:
-            * **Смена порядка сцен и глав**: Добавлено каноническое поле `sort_order` в SQLite. Интерактивная смена мест глав в Оглавлении (`▲`/`▼`), Канбан-доске и при чтении.
-            * **Радикальный апгрейд «Реестра» (Кодекс)**: Полноценная таксономия (Персонажи, Реликвии, Демиурги, Локации), переключение «Сетка / Таблица», создание сущностей с атрибутами и интерактивный инспектор связей.
-            * **Радикальный апгрейд «Космоса» (Граф)**: Звездная визуализация с аурами сущностей, плазменными фотонными импульсами по связям, радар-миникартой и поиском с телепортацией камеры.
-            * **Глубокая вкладка «Настройки»**: Управление шрифтами редактора, кареткой, интервалом автосохранения, порогами Lore Guardian и оптимизацией SQLite (WAL Checkpoint & VACUUM).
-            * **Универсальный импорт и экспорт**: Поддержка чистого `.TXT` с умным авто-разбиением на главы, Markdown `.MD`, HTML-издания и сжатых пакетов `.WSTORY v2` (Gzip + Base64).
-            * **Безупречная читаемость тем**: Полное соответствие стандарту WCAG AAA (>14:1) для светлых (Paper, Sepia) и темных (Obsidian, Celestial, OLED) тем.
-            * **Ликвидация God Object**: Кодовая база разделена на специализированные модули и композаблы, обеспечивая молниеносный отклик и нулевое потребление лишних ресурсов.
-            * **Полная очистка от демо-данных**: Никаких предустановленных тестовых текстов — чистое полотно для творчества автора с первого запуска.
+            ## Wingnite Story 1.4.0001 (${{ github.ref_name }})
+
+            ### What's New
+            * **Multi-language Localization**: English base (`en`) with Russian (`ru`), German (`de`), and Spanish (`es`) translations, auto-detection, and live switcher.
+            * **Reworked Cryptographic Vault & Snapshots**: Per-book Merkle tree integrity verification, salted SHA-256 passphrase edit locking, and per-scene version snapshots with one-click restore.
+            * **Live Rope (`ropey`) Integration**: Unicode-safe delta synchronization between the editor and Rust `ropey::Rope` sessions with live line and hash telemetry.
+            * **Native Export Save-As Dialogs**: Choose any output folder and filename when exporting `.wstory`, `.md`, `.txt`, and compiled `.html` editions on both Desktop and Android (SAF).
+            * **Android & Non-Standard Screen Support**: Safe-area insets across notches/cutouts/gesture bars, foldable screen responsiveness, swipe-snap Kanban columns, and compact writing mode when the soft keyboard opens.
+            * **Refined Theme Palette**: Rebalanced `Dark`, `Amber`, `Sepia`, `Paper`, and `OLED` themes with full light/dark contrast parity.
+            * **Full CRUD & Stability Fixes**: Book editing, milestone editing, relation removal, graph entity filtering and node dragging, Lore Guardian negation/ignore persistence, locale-calibrated readability formulas, and Markdown-to-HTML rendering in book exports.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri_args }}
@@ -122,14 +124,16 @@ jobs:
           echo "NDK_HOME=$ACTUAL_NDK" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$ACTUAL_NDK" >> $GITHUB_ENV
           mkdir -p /usr/local/lib/android/sdk/licenses
-          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > /usr/local/lib/android/sdk/licenses/android-sdk-license
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af0dfcb131a6481e\n" > /usr/local/lib/android/sdk/licenses/android-sdk-license
 
       - name: Install Node Dependencies
         run: npm ci
 
       - name: Build Android APK and AAB
         run: |
-          npx tauri android init
+          if [ ! -d "src-tauri/gen/android" ]; then
+            npx tauri android init
+          fi
           npx tauri android build --apk
           npx tauri android build --aab
 
@@ -137,19 +141,21 @@ jobs:
         env:
           KEYSTORE_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
-          RAW_APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          RAW_AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name "*.aab" | head -n 1)
+          RAW_APK=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" | head -n 1)
+          RAW_AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
 
           if [ -n "$RAW_AAB" ]; then
             cp "$RAW_AAB" Wingnite-Story-Android.aab
           fi
 
-          if [ "$KEYSTORE_PRESENT" = "true" ]; then
-            printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
-            APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
-            $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk "$RAW_APK"
-          else
-            cp "$RAW_APK" Wingnite-Story-Android.apk
+          if [ -n "$RAW_APK" ]; then
+            if [ "$KEYSTORE_PRESENT" = "true" ]; then
+              printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+              APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools/ -name apksigner | sort -V | tail -n 1)
+              $APKSIGNER sign --ks release.keystore --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} --out Wingnite-Story-Android.apk "$RAW_APK"
+            else
+              cp "$RAW_APK" Wingnite-Story-Android.apk
+            fi
           fi
 
       - name: Upload Android Release Assets

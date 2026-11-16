@@ -1,21 +1,38 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
+import type { ProjectItem } from "../../types";
+import { useI18n } from "../../i18n";
 
-const { isOpen } = defineProps<{
+const { isOpen, editingProject = null } = defineProps<{
   isOpen: boolean;
+  editingProject?: ProjectItem | null;
 }>();
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "submit", payload: { title: string; description: string }): void;
+  (e: "submit", payload: { id?: string; title: string; description: string }): void;
 }>();
 
+const { t } = useI18n();
 const title = ref("");
 const description = ref("");
+
+watch(
+  [() => isOpen, () => editingProject],
+  ([open, proj]) => {
+    if (open) {
+      title.value = proj ? proj.title : "";
+      description.value = proj ? proj.description : "";
+    }
+  }
+);
 
 function handleConfirm() {
   if (!title.value.trim()) return;
   emit("submit", {
+    id: editingProject?.id,
     title: title.value.trim(),
     description: description.value.trim(),
   });
@@ -27,27 +44,29 @@ function handleConfirm() {
 <template>
   <div v-if="isOpen" class="modal-backdrop" @click.self="emit('close')">
     <div class="modal-window">
-      <h3>Новое литературное произведение</h3>
-      <p class="modal-subtext">Создание изолированного пространства для глав, сцен, канбана и реестра канона.</p>
-      
+      <h3>{{ editingProject ? t("projects.editTitle") : t("projects.createTitle") }}</h3>
+      <p class="modal-subtext">{{ t("projects.createSubtitle") }}</p>
+
       <div class="form-inputs">
         <input
           v-model="title"
           class="modal-input"
-          placeholder="Название книги или саги..."
+          :placeholder="t('projects.titlePlaceholder')"
           autofocus
           @keydown.enter="handleConfirm"
         />
         <textarea
           v-model="description"
           class="modal-textarea"
-          placeholder="Краткое описание сеттинга, синопсис или логлайн..."
+          :placeholder="t('projects.descPlaceholder')"
         ></textarea>
       </div>
 
       <div class="modal-actions">
-        <button class="btn-modal-cancel" @click="emit('close')">Отмена</button>
-        <button class="btn-modal-submit" @click="handleConfirm">Создать произведение</button>
+        <button class="btn-modal-cancel" @click="emit('close')">{{ t("common.cancel") }}</button>
+        <button class="btn-modal-submit" @click="handleConfirm">
+          {{ editingProject ? t("projects.editAction") : t("projects.createAction") }}
+        </button>
       </div>
     </div>
   </div>

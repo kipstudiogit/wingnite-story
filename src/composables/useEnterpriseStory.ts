@@ -1,26 +1,36 @@
-import { ref, computed, shallowRef } from "vue";
-import { invoke, Channel } from "@tauri-apps/api/core";
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
+import { ref, computed } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   EnterpriseStoryItem,
   SaveStoryPayload,
   StoryOrderUpdate,
-  AuditLogEntry,
   FtsResultItem,
   ProjectItem,
+  EntityKind,
 } from "../types";
 import { useHaptics } from "./useHaptics";
+import { useI18n } from "../i18n";
 
 const stories = ref<EnterpriseStoryItem[]>([]);
-const auditLogs = shallowRef<AuditLogEntry[]>([]);
 const activeId = ref<string>("");
 const currentTitle = ref<string>("");
 const currentContent = ref<string>("");
-const currentCategory = ref<string>("Акт I");
+const currentCategory = ref<string>("Act I");
 const currentRevision = ref<number>(0);
 const currentSortOrder = ref<number>(0);
 const activeOperator = ref<string>("Lead-Editor-Console");
 const isSyncing = ref<boolean>(false);
 const syncError = ref<string | null>(null);
+
+const savedBaseline = ref({
+  id: "",
+  title: "",
+  category: "Act I",
+  content: "",
+});
 
 function calculateWords(text: string): number {
   let count = 0;
@@ -40,10 +50,20 @@ function calculateWords(text: string): number {
 
 export function useEnterpriseStory() {
   const { vibrateSuccess, vibrateWarning } = useHaptics();
+  const { t } = useI18n();
 
   const activeStory = computed(() =>
     stories.value.find((s) => s.id === activeId.value)
   );
+
+  const isDirty = computed(() => {
+    return (
+      activeId.value !== savedBaseline.value.id ||
+      currentTitle.value !== savedBaseline.value.title ||
+      currentCategory.value !== savedBaseline.value.category ||
+      currentContent.value !== savedBaseline.value.content
+    );
+  });
 
   const currentWords = computed(() => calculateWords(currentContent.value));
 
@@ -58,6 +78,36 @@ export function useEnterpriseStory() {
     }
     return count;
   });
+
+  function setBaseline(id: string, title: string, category: string, content: string) {
+    savedBaseline.value = { id, title, category, content };
+  }
+
+  function applyServerSavedStory(updated: EnterpriseStoryItem) {
+    activeId.value = updated.id;
+    currentTitle.value = updated.title;
+    currentContent.value = updated.content;
+    currentCategory.value = updated.category;
+    currentRevision.value = updated.revision;
+    currentSortOrder.value = updated.sortOrder;
+    setBaseline(updated.id, updated.title, updated.category, updated.content);
+
+    const idx = stories.value.findIndex((s) => s.id === updated.id);
+    if (idx !== -1) {
+      stories.value[idx] = updated;
+    } else {
+      stories.value.push(updated);
+    }
+  }
+
+  function registerExternalStory(story: EnterpriseStoryItem) {
+    const idx = stories.value.findIndex((s) => s.id === story.id);
+    if (idx === -1) {
+      stories.value.push(story);
+    } else {
+      stories.value[idx] = story;
+    }
+  }
 
   async function loadSystemStories(projectId: string): Promise<void> {
     isSyncing.value = true;
@@ -86,6 +136,7 @@ export function useEnterpriseStory() {
     currentCategory.value = story.category;
     currentRevision.value = story.revision;
     currentSortOrder.value = story.sortOrder;
+    setBaseline(story.id, story.title, story.category, story.content);
   }
 
   async function persistStoryMutation(projectId: string): Promise<boolean> {
@@ -96,9 +147,9 @@ export function useEnterpriseStory() {
     const payload: SaveStoryPayload = {
       id: activeId.value,
       projectId,
-      title: currentTitle.value.trim() || "Новая сцена",
+      title: currentTitle.value.trim() || t("studio.defaultSceneTitle"),
       content: currentContent.value,
-      category: currentCategory.value.trim() || "Акт I",
+      category: currentCategory.value.trim() || t("studio.defaultCategory"),
       expectedRevision: currentRevision.value,
       sortOrder: currentSortOrder.value,
       operator: activeOperator.value,
@@ -106,25 +157,56 @@ export function useEnterpriseStory() {
 
     try {
       const updated = await invoke<EnterpriseStoryItem>("mutate_story", { payload });
-      activeId.value = updated.id;
-      currentTitle.value = updated.title;
-      currentContent.value = updated.content;
-      currentCategory.value = updated.category;
-      currentRevision.value = updated.revision;
-      currentSortOrder.value = updated.sortOrder;
-
-      const idx = stories.value.findIndex((s) => s.id === updated.id);
-      if (idx !== -1) {
-        stories.value[idx] = updated;
-      } else {
-        stories.value.push(updated);
-      }
+      applyServerSavedStory(updated);
       vibrateSuccess();
       return true;
     } catch (err) {
       syncError.value = String(err);
       vibrateWarning();
       return false;
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  async function persistSpecificStory(
+    story: EnterpriseStoryItem,
+    fallbackProjectId: string
+  ): Promise<EnterpriseStoryItem | null> {
+    if (isSyncing.value) return null;
+    isSyncing.value = true;
+    syncError.value = null;
+
+    const payload: SaveStoryPayload = {
+      id: story.id,
+      projectId: story.projectId || fallbackProjectId,
+      title: story.title.trim() || t("studio.defaultSceneTitle"),
+      content: story.content,
+      category: story.category.trim() || t("studio.defaultCategory"),
+      expectedRevision: story.revision,
+      sortOrder: story.sortOrder,
+      operator: activeOperator.value,
+    };
+
+    try {
+      const updated = await invoke<EnterpriseStoryItem>("mutate_story", { payload });
+      const idx = stories.value.findIndex((s) => s.id === updated.id);
+      if (idx !== -1) {
+        stories.value[idx] = updated;
+      } else {
+        stories.value.push(updated);
+      }
+
+      if (activeId.value === updated.id) {
+        applyServerSavedStory(updated);
+      }
+
+      vibrateSuccess();
+      return updated;
+    } catch (err) {
+      syncError.value = String(err);
+      vibrateWarning();
+      return null;
     } finally {
       isSyncing.value = false;
     }
@@ -149,6 +231,7 @@ export function useEnterpriseStory() {
       return true;
     } catch (err) {
       syncError.value = String(err);
+      vibrateWarning();
       return false;
     } finally {
       isSyncing.value = false;
@@ -166,31 +249,52 @@ export function useEnterpriseStory() {
         }
       }
       stories.value.sort((a, b) => a.sortOrder - b.sortOrder);
+      const activeFound = stories.value.find((s) => s.id === activeId.value);
+      if (activeFound) {
+        currentSortOrder.value = activeFound.sortOrder;
+        currentCategory.value = activeFound.category;
+      }
       vibrateSuccess();
     } catch (err) {
       syncError.value = String(err);
+      vibrateWarning();
     }
   }
 
-  async function startAuditStream(): Promise<void> {
-    const channel = new Channel<AuditLogEntry>();
-    const collected: AuditLogEntry[] = [];
+  async function swapStoryPairNormalized(idA: string, idB: string): Promise<void> {
+    const ordered = [...stories.value].sort((a, b) => a.sortOrder - b.sortOrder);
+    const idxA = ordered.findIndex((s) => s.id === idA);
+    const idxB = ordered.findIndex((s) => s.id === idB);
+    if (idxA === -1 || idxB === -1) return;
 
-    channel.onmessage = (entry: AuditLogEntry) => {
-      collected.push(entry);
-      auditLogs.value = [...collected];
-    };
+    const temp = ordered[idxA];
+    ordered[idxA] = ordered[idxB];
+    ordered[idxB] = temp;
 
-    try {
-      await invoke("stream_audit_trail", { channel });
-    } catch (err) {
-      syncError.value = String(err);
-    }
+    const updates: StoryOrderUpdate[] = ordered.map((item, idx) => ({
+      id: item.id,
+      sortOrder: idx,
+      category: item.category,
+    }));
+
+    await batchReorderStories(updates);
   }
 
-  async function performIndexedSearch(query: string): Promise<FtsResultItem[]> {
+  async function moveStoryToCategory(storyId: string, targetCategory: string): Promise<void> {
+    const ordered = [...stories.value].sort((a, b) => a.sortOrder - b.sortOrder);
+    const maxOrder = ordered.reduce((acc, s) => Math.max(acc, s.sortOrder), -1);
+    await batchReorderStories([
+      {
+        id: storyId,
+        sortOrder: maxOrder + 1,
+        category: targetCategory,
+      },
+    ]);
+  }
+
+  async function performIndexedSearch(query: string, projectId: string): Promise<FtsResultItem[]> {
     try {
-      return await invoke<FtsResultItem[]>("execute_fts_search", { query });
+      return await invoke<FtsResultItem[]>("execute_fts_search", { query, projectId });
     } catch (err) {
       syncError.value = String(err);
       return [];
@@ -202,57 +306,57 @@ export function useEnterpriseStory() {
   }
 
   async function importProjectWstory(packageRaw: string): Promise<ProjectItem> {
-    const imported = await invoke<ProjectItem>("import_project_wstory", {
+    return await invoke<ProjectItem>("import_project_wstory", {
       packageRaw,
       operator: activeOperator.value,
     });
-    return imported;
   }
 
   function initializeBlankDraft(
-    category = "Акт I",
+    category?: string,
     title = "",
     template = ""
   ): void {
+    const resolvedCategory = category ?? t("studio.defaultCategory");
     activeId.value = "";
     currentTitle.value = title;
-    currentCategory.value = category;
+    currentCategory.value = resolvedCategory;
     currentContent.value = template;
     currentRevision.value = 0;
     currentSortOrder.value = stories.value.length;
+    setBaseline("", title, resolvedCategory, template);
   }
 
-  function createEntityDraft(type: "artifact" | "pantheon" | "sanctuary" | "character"): void {
+  function createEntityDraft(type: EntityKind): void {
     if (type === "character") {
       initializeBlankDraft(
-        "Персонаж",
-        "Новый Персонаж",
-        "### Досье Персонажа\n* **Класс:** Протагонист / Искатель\n* **Лояльность:** Орден\n* **Статус:** Жив\n* **Мотивация:** Поиск истины\n\nБиография..."
+        t("codex.creator.categories.character"),
+        t("codex.creator.templates.characterDefaultTitle"),
+        t("codex.creator.templates.characterTemplate")
       );
     } else if (type === "artifact") {
       initializeBlankDraft(
-        "Божественный Артефакт",
-        "Новая Реликвия",
-        "### Реликвия\n* **Класс:** Древний Артефакт\n* **Владелец:** Неизвестно\n* **Свойство:** Манипуляция энергией\n* **Уязвимость:** Неуязвим\n\nИстория..."
+        t("codex.creator.categories.artifact"),
+        t("codex.creator.templates.artifactDefaultTitle"),
+        t("codex.creator.templates.artifactTemplate")
       );
     } else if (type === "pantheon") {
       initializeBlankDraft(
-        "Демиург / Сущность",
-        "Новый Демиург",
-        "### Высшая Сущность\n* **Ранг:** Архитектор\n* **Статус:** Бессмертен\n* **Облик:** Созвездие\n* **Уязвимость:** Искажение ритма\n\nОписание..."
+        t("codex.creator.categories.pantheon"),
+        t("codex.creator.templates.pantheonDefaultTitle"),
+        t("codex.creator.templates.pantheonTemplate")
       );
     } else {
       initializeBlankDraft(
-        "Святилище Сил",
-        "Новая Локация",
-        "### Локация\n* **Регион:** Расколотые земли\n* **Атмосфера:** Аномалии\n* **Особенность:** Древний портал\n\nОписание..."
+        t("codex.creator.categories.sanctuary"),
+        t("codex.creator.templates.sanctuaryDefaultTitle"),
+        t("codex.creator.templates.sanctuaryTemplate")
       );
     }
   }
 
   return {
     stories,
-    auditLogs,
     activeId,
     currentTitle,
     currentContent,
@@ -261,16 +365,21 @@ export function useEnterpriseStory() {
     currentSortOrder,
     activeOperator,
     isSyncing,
+    isDirty,
     syncError,
     activeStory,
     currentWords,
     totalSystemWords,
+    applyServerSavedStory,
+    registerExternalStory,
     loadSystemStories,
     selectEnterpriseStory,
     persistStoryMutation,
+    persistSpecificStory,
     deleteSystemStory,
     batchReorderStories,
-    startAuditStream,
+    swapStoryPairNormalized,
+    moveStoryToCategory,
     performIndexedSearch,
     exportProjectWstory,
     importProjectWstory,

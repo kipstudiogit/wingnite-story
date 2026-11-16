@@ -1,10 +1,15 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import type { LspHoverInfo } from "../../types";
+import { useI18n } from "../../i18n";
 
 const { hoverInfo, coordinates } = defineProps<{
   hoverInfo: LspHoverInfo;
   coordinates: { x: number; y: number };
 }>();
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -18,7 +23,7 @@ const { hoverInfo, coordinates } = defineProps<{
     </div>
     <p class="hover-summary">{{ hoverInfo.summary }}</p>
     <div v-if="hoverInfo.connectedEntities.length > 0" class="hover-relations">
-      <span class="rel-tag-label">Связи:</span>
+      <span class="rel-tag-label">{{ t("lsp.relationsLabel") }}</span>
       <span v-for="rel in hoverInfo.connectedEntities" :key="rel" class="rel-tag">{{ rel }}</span>
     </div>
   </div>

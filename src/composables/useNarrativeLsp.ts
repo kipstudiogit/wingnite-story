@@ -1,44 +1,21 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { ref, shallowRef } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  EnterpriseStoryItem,
+  LspHoverInfo,
+  LspQueryPayload,
+  LspSuggestion,
+  WikiLinkResolvePayload,
+  WikiLinkResolveResult,
+} from "../types";
 
-export interface LspSuggestion {
-  id: string;
-  title: string;
-  category: string;
-  preview: string;
-  linkType: string;
-  matchScore: number;
-}
-
-export interface LspHoverInfo {
-  id: string;
-  title: string;
-  category: string;
-  summary: string;
-  connectedEntities: string[];
-  revision: number;
-}
-
-export interface LspQueryPayload {
-  storyId: string;
-  rawToken: string;
-  triggerChar: string;
-}
-
-export interface WikiLinkResolvePayload {
-  sourceStoryId: string;
-  targetTitle: string;
-  operator: string;
-}
-
-export interface WikiLinkResolveResult {
-  targetId: string;
-  targetTitle: string;
-  isNewEntity: boolean;
-  relationId: string;
-}
-
-export function useNarrativeLsp(sourceStoryIdGetter: () => string) {
+export function useNarrativeLsp(
+  projectIdGetter: () => string,
+  sourceStoryIdGetter: () => string
+) {
   const isSuggestionsOpen = ref(false);
   const suggestions = shallowRef<LspSuggestion[]>([]);
   const selectedIndex = ref(0);
@@ -91,6 +68,7 @@ export function useNarrativeLsp(sourceStoryIdGetter: () => string) {
     if (lspDebounce) clearTimeout(lspDebounce);
     lspDebounce = window.setTimeout(async () => {
       const payload: LspQueryPayload = {
+        projectId: projectIdGetter(),
         storyId: sourceStoryIdGetter(),
         rawToken,
         triggerChar,
@@ -121,7 +99,11 @@ export function useNarrativeLsp(sourceStoryIdGetter: () => string) {
     fullText: string,
     cursorOffset: number,
     operator = "Lsp-Operator"
-  ): Promise<{ nextText: string; nextCursor: number }> {
+  ): Promise<{
+    nextText: string;
+    nextCursor: number;
+    createdStory: EnterpriseStoryItem | null;
+  }> {
     const start = tokenStartIndex.value;
     const isWiki = triggerType.value === "wikilink";
     const replacement = isWiki
@@ -137,16 +119,22 @@ export function useNarrativeLsp(sourceStoryIdGetter: () => string) {
     closeSuggestions();
 
     const resolvePayload: WikiLinkResolvePayload = {
+      projectId: projectIdGetter(),
       sourceStoryId: sourceStoryIdGetter(),
       targetTitle: suggestion.title,
       operator,
     };
 
+    let createdStory: EnterpriseStoryItem | null = null;
     try {
-      await invoke<WikiLinkResolveResult>("lsp_resolve_wikilink", { payload: resolvePayload });
-    } catch {}
+      const result = await invoke<WikiLinkResolveResult>("lsp_resolve_wikilink", {
+        payload: resolvePayload,
+      });
+      createdStory = result.createdStory ?? null;
+    } catch {
+    }
 
-    return { nextText, nextCursor };
+    return { nextText, nextCursor, createdStory };
   }
 
   function handleKeydownNavigation(e: KeyboardEvent): boolean {
@@ -186,11 +174,14 @@ export function useNarrativeLsp(sourceStoryIdGetter: () => string) {
     try {
       const data = await invoke<LspHoverInfo | null>("lsp_hover_entity", {
         entityTitle: cleaned,
+        projectId: projectIdGetter(),
       });
 
       if (data) {
+        const clampedX = Math.min(window.innerWidth - 300, Math.max(12, clientX + 12));
+        const clampedY = Math.min(window.innerHeight - 180, Math.max(12, clientY + 16));
         hoverInfo.value = data;
-        hoverCoordinates.value = { x: clientX + 12, y: clientY + 16 };
+        hoverCoordinates.value = { x: clampedX, y: clampedY };
         isHoverActive.value = true;
       } else {
         dismissHover();

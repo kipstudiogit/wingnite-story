@@ -1,16 +1,21 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { APP_DISPLAY_VERSION, APP_LICENSE, APP_PUBLISHER } from "../constants/app";
 import { useAppSettings } from "../composables/useAppSettings";
 import { useHaptics } from "../composables/useHaptics";
+import { useI18n, type LocaleCode } from "../i18n";
 import type { DbStatsPayload } from "../types";
 
 const emit = defineEmits<{
-  (e: "notification", msg: string): void;
+  (e: "notification", msg: string, kind: "success" | "error"): void;
 }>();
 
 const { settings, resetToDefaults } = useAppSettings();
 const { vibrateSuccess, vibrateLight } = useHaptics();
+const { t, messages, locale, availableLocales, setLocale } = useI18n();
 
 const dbStats = ref<DbStatsPayload | null>(null);
 const isOptimizing = ref(false);
@@ -18,7 +23,8 @@ const isOptimizing = ref(false);
 async function loadDbStats() {
   try {
     dbStats.value = await invoke<DbStatsPayload>("app_get_db_stats");
-  } catch {}
+  } catch {
+  }
 }
 
 async function handleWalCheckpoint() {
@@ -26,10 +32,10 @@ async function handleWalCheckpoint() {
   try {
     await invoke("app_checkpoint_wal");
     vibrateSuccess();
-    emit("notification", "Сброс SQLite WAL выполнен успешно ✓");
+    emit("notification", t("settings.database.walDone"), "success");
     await loadDbStats();
   } catch (err) {
-    emit("notification", `Ошибка WAL: ${String(err)}`);
+    emit("notification", t("settings.database.walError", { error: String(err) }), "error");
   } finally {
     isOptimizing.value = false;
   }
@@ -40,21 +46,21 @@ async function handleVacuumDb() {
   try {
     await invoke("app_vacuum_db");
     vibrateSuccess();
-    emit("notification", "Дефрагментация базы данных завершена ✓");
+    emit("notification", t("settings.database.vacuumDone"), "success");
     await loadDbStats();
   } catch (err) {
-    emit("notification", `Ошибка вакуумизации: ${String(err)}`);
+    emit("notification", t("settings.database.vacuumError", { error: String(err) }), "error");
   } finally {
     isOptimizing.value = false;
   }
 }
 
 function formatBytes(bytes: number) {
-  if (bytes === 0) return "0 Б";
+  const sizes = messages.value.settings.database.bytesUnits;
+  if (bytes === 0) return `0 ${sizes[0]}`;
   const k = 1024;
-  const sizes = ["Б", "КБ", "МБ", "ГБ"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
 onMounted(() => {
@@ -67,48 +73,74 @@ onMounted(() => {
     <div class="settings-scroller">
       <header class="settings-header">
         <div class="header-titles">
-          <h2>Параметры и Системное Ядро</h2>
-          <p>Архитектурная калибровка студии, баз данных и алгоритмов канона</p>
+          <h2>{{ t("settings.title") }}</h2>
+          <p>{{ t("settings.subtitle") }}</p>
         </div>
-        <button class="btn-reset-settings" @click="resetToDefaults(); vibrateLight()">Сброс настроек</button>
+        <button class="btn-reset-settings" @click="resetToDefaults(); vibrateLight()">
+          {{ t("settings.resetBtn") }}
+        </button>
       </header>
 
       <div class="settings-sections-stack">
-        <!-- Секция 1: Редактор и шрифты -->
         <div class="settings-card">
           <div class="card-head">
-            <span class="card-icon">✎</span>
+            <span class="card-icon">🌐</span>
             <div>
-              <h3>Типографика и Холст Редактора</h3>
-              <p>Оформление рабочего пространства в Студии</p>
+              <h3>{{ t("settings.localization.title") }}</h3>
+              <p>{{ t("settings.localization.subtitle") }}</p>
             </div>
           </div>
 
           <div class="settings-grid">
             <div class="setting-item">
-              <label>Семейство шрифта ввода</label>
+              <label>{{ t("settings.localization.languageLabel") }}</label>
+              <select
+                class="setting-select"
+                :value="locale"
+                @change="setLocale(($event.target as HTMLSelectElement).value as LocaleCode); vibrateLight()"
+              >
+                <option v-for="loc in availableLocales" :key="loc.code" :value="loc.code">
+                  {{ loc.nativeName }} ({{ loc.name }})
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="card-head">
+            <span class="card-icon">✎</span>
+            <div>
+              <h3>{{ t("settings.typography.title") }}</h3>
+              <p>{{ t("settings.typography.subtitle") }}</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="setting-item">
+              <label>{{ t("settings.typography.fontLabel") }}</label>
               <select v-model="settings.editorFontFamily" class="setting-select">
-                <option value="var(--font-sans)">SF Pro / Inter (Гротеск)</option>
-                <option value="var(--font-mono)">JetBrains Mono (Моноширинный)</option>
-                <option value="var(--font-serif)">Literata / Georgia (Антиква)</option>
+                <option value="var(--font-sans)">{{ t("settings.typography.fonts.sans") }}</option>
+                <option value="var(--font-mono)">{{ t("settings.typography.fonts.mono") }}</option>
+                <option value="var(--font-serif)">{{ t("settings.typography.fonts.serif") }}</option>
               </select>
             </div>
 
             <div class="setting-item">
-              <label>Межстрочный интервал</label>
+              <label>{{ t("settings.typography.lineHeightLabel") }}</label>
               <select v-model.number="settings.editorLineHeight" class="setting-select">
-                <option :value="1.6">1.6 (Плотный)</option>
-                <option :value="1.85">1.85 (Стандартный)</option>
-                <option :value="2.1">2.1 (Свободный)</option>
+                <option :value="1.6">{{ t("settings.typography.lineHeights.compact") }}</option>
+                <option :value="1.85">{{ t("settings.typography.lineHeights.standard") }}</option>
+                <option :value="2.1">{{ t("settings.typography.lineHeights.loose") }}</option>
               </select>
             </div>
 
             <div class="setting-item">
-              <label>Ширина рабочего холста</label>
+              <label>{{ t("settings.typography.canvasWidthLabel") }}</label>
               <select v-model="settings.canvasMaxWidth" class="setting-select">
-                <option value="860px">860px (Фокус)</option>
-                <option value="1100px">1100px (Широкий)</option>
-                <option value="100%">100% (На всю ширину экрана)</option>
+                <option value="860px">{{ t("settings.typography.canvasWidths.focus") }}</option>
+                <option value="1100px">{{ t("settings.typography.canvasWidths.wide") }}</option>
+                <option value="100%">{{ t("settings.typography.canvasWidths.full") }}</option>
               </select>
             </div>
 
@@ -117,26 +149,26 @@ onMounted(() => {
                 <input v-model="settings.smoothCaret" type="checkbox" />
                 <span class="switch-slider"></span>
               </label>
-              <span>Плавное ведение каретки ввода</span>
+              <span>{{ t("settings.typography.smoothCaretLabel") }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Секция 2: SQLite и Хранилище -->
         <div class="settings-card">
           <div class="card-head">
             <span class="card-icon">🗄️</span>
             <div>
-              <h3>Хранилище SQLite WAL Core</h3>
-              <p>Телеметрия дискового пространства и оптимизация индексов</p>
+              <h3>{{ t("settings.database.title") }}</h3>
+              <p>{{ t("settings.database.subtitle") }}</p>
             </div>
           </div>
 
           <div v-if="dbStats" class="db-telemetry-row">
-            <div class="db-badge">Сцен: <b>{{ dbStats.totalStories }}</b></div>
-            <div class="db-badge">Произведений: <b>{{ dbStats.totalProjects }}</b></div>
-            <div class="db-badge">Связей: <b>{{ dbStats.totalRelations }}</b></div>
-            <div class="db-badge">Размер базы: <b>{{ formatBytes(dbStats.dbSizeBytes) }}</b></div>
+            <div class="db-badge">{{ t("settings.database.scenes") }} <b>{{ dbStats.totalStories }}</b></div>
+            <div class="db-badge">{{ t("settings.database.projects") }} <b>{{ dbStats.totalProjects }}</b></div>
+            <div class="db-badge">{{ t("settings.database.relations") }} <b>{{ dbStats.totalRelations }}</b></div>
+            <div class="db-badge">{{ t("settings.database.events") }} <b>{{ dbStats.totalTimelineEvents }}</b></div>
+            <div class="db-badge">{{ t("settings.database.size") }} <b>{{ formatBytes(dbStats.dbSizeBytes) }}</b></div>
           </div>
 
           <div class="settings-actions-cluster">
@@ -145,45 +177,44 @@ onMounted(() => {
               :disabled="isOptimizing"
               @click="handleWalCheckpoint"
             >
-              Сброс WAL на диск (Checkpoint)
+              {{ t("settings.database.walBtn") }}
             </button>
             <button
               class="btn-setting-action"
               :disabled="isOptimizing"
               @click="handleVacuumDb"
             >
-              Дефрагментация и VACUUM
+              {{ t("settings.database.vacuumBtn") }}
             </button>
           </div>
 
           <div class="setting-item mt-3">
-            <label>Интервал автосохранения черновиков</label>
+            <label>{{ t("settings.database.autoSaveLabel") }}</label>
             <select v-model.number="settings.autoSaveIntervalMs" class="setting-select">
-              <option :value="1000">1 секунда (Мгновенно)</option>
-              <option :value="2500">2.5 секунды (Оптимально)</option>
-              <option :value="5000">5 секунд</option>
-              <option :value="0">Только вручную (Ctrl+S)</option>
+              <option :value="1000">{{ t("settings.database.autoSaveOptions.instant") }}</option>
+              <option :value="2500">{{ t("settings.database.autoSaveOptions.optimal") }}</option>
+              <option :value="5000">{{ t("settings.database.autoSaveOptions.relaxed") }}</option>
+              <option :value="0">{{ t("settings.database.autoSaveOptions.manual") }}</option>
             </select>
           </div>
         </div>
 
-        <!-- Секция 3: Страж канона -->
         <div class="settings-card">
           <div class="card-head">
             <span class="card-icon">◈</span>
             <div>
-              <h3>Нейроматрица Стража Канона</h3>
-              <p>Параметры детектора аномалий и противоречий сюжета</p>
+              <h3>{{ t("settings.loreSection.title") }}</h3>
+              <p>{{ t("settings.loreSection.subtitle") }}</p>
             </div>
           </div>
 
           <div class="settings-grid">
             <div class="setting-item">
-              <label>Чувствительность фильтрации</label>
+              <label>{{ t("settings.loreSection.sensitivityLabel") }}</label>
               <select v-model="settings.loreSensitivity" class="setting-select">
-                <option value="STRICT">Строгая (Онтология + Граф + Хронология)</option>
-                <option value="BALANCED">Сбалансированная (Рекомендуется)</option>
-                <option value="PERMISSIVE">Мягкая (Только критические парадоксы)</option>
+                <option value="STRICT">{{ t("settings.loreSection.sensitivities.strict") }}</option>
+                <option value="BALANCED">{{ t("settings.loreSection.sensitivities.balanced") }}</option>
+                <option value="PERMISSIVE">{{ t("settings.loreSection.sensitivities.permissive") }}</option>
               </select>
             </div>
 
@@ -192,30 +223,34 @@ onMounted(() => {
                 <input v-model="settings.loreAuditOnInput" type="checkbox" />
                 <span class="switch-slider"></span>
               </label>
-              <span>Фоновый аудит канона при наборе текста</span>
+              <span>{{ t("settings.loreSection.auditOnInputLabel") }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Секция 4: Спринт и цели -->
         <div class="settings-card">
           <div class="card-head">
             <span class="card-icon">⚡</span>
             <div>
-              <h3>Спринты и Продуктивность</h3>
-              <p>Управление писательскими нормами</p>
+              <h3>{{ t("settings.productivity.title") }}</h3>
+              <p>{{ t("settings.productivity.subtitle") }}</p>
             </div>
           </div>
 
           <div class="settings-grid">
             <div class="setting-item">
-              <label>Дневная норма слов</label>
-              <input v-model.number="settings.dailyWordGoal" type="number" class="setting-input" />
+              <label>{{ t("settings.productivity.dailyGoalLabel") }}</label>
+              <input v-model.number="settings.dailyWordGoal" type="number" min="100" class="setting-input" />
             </div>
 
             <div class="setting-item">
-              <label>Длительность спринта по умолчанию (мин)</label>
-              <input v-model.number="settings.sprintDurationMinutes" type="number" class="setting-input" />
+              <label>{{ t("settings.productivity.bookGoalLabel") }}</label>
+              <input v-model.number="settings.bookWordGoal" type="number" min="1000" class="setting-input" />
+            </div>
+
+            <div class="setting-item">
+              <label>{{ t("settings.productivity.sprintDurationLabel") }}</label>
+              <input v-model.number="settings.sprintDurationMinutes" type="number" min="1" class="setting-input" />
             </div>
 
             <div class="setting-item checkbox-item">
@@ -223,8 +258,24 @@ onMounted(() => {
                 <input v-model="settings.hapticsEnabled" type="checkbox" />
                 <span class="switch-slider"></span>
               </label>
-              <span>Виброотклик и тактильные щелчки (Haptics)</span>
+              <span>{{ t("settings.productivity.hapticsLabel") }}</span>
             </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="card-head">
+            <span class="card-icon">❖</span>
+            <div>
+              <h3>{{ t("settings.about.title") }}</h3>
+              <p>{{ t("settings.about.subtitle") }}</p>
+            </div>
+          </div>
+
+          <div class="db-telemetry-row">
+            <div class="db-badge">{{ t("settings.about.versionLabel") }}: <b>{{ APP_DISPLAY_VERSION }}</b></div>
+            <div class="db-badge">{{ t("settings.about.licenseLabel") }}: <b>{{ APP_LICENSE }}</b></div>
+            <div class="db-badge">{{ t("settings.about.studioLabel") }}: <b>{{ APP_PUBLISHER }}</b></div>
           </div>
         </div>
       </div>
@@ -239,7 +290,8 @@ onMounted(() => {
   justify-content: center;
   overflow-y: auto;
   background: var(--bg-deep);
-  padding: 30px 20px calc(var(--safe-bottom) + 80px) 20px;
+  padding: 24px max(16px, var(--safe-right)) calc(var(--safe-bottom) + 32px) max(16px, var(--safe-left));
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-scroller {
@@ -247,19 +299,21 @@ onMounted(() => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
 }
 
 .settings-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .header-titles h2 {
-  font-size: 24px;
+  font-size: clamp(20px, 4vw, 24px);
   font-weight: 900;
   color: var(--text-pure);
 }
@@ -275,6 +329,7 @@ onMounted(() => {
   border: 1px solid var(--border);
   color: var(--text-muted);
   padding: 8px 14px;
+  min-height: 38px;
   border-radius: 8px;
   font-size: 11px;
   font-weight: 700;
@@ -284,14 +339,14 @@ onMounted(() => {
 .settings-sections-stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .settings-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -321,7 +376,7 @@ onMounted(() => {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 14px;
 }
 
@@ -344,16 +399,18 @@ onMounted(() => {
   border: 1px solid var(--border);
   color: var(--text-pure);
   border-radius: 8px;
+  min-height: 40px;
   padding: 8px 12px;
   font-size: 13px;
   outline: none;
+  width: 100%;
 }
 
 .checkbox-item {
   flex-direction: row;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .checkbox-item span {
@@ -365,8 +422,9 @@ onMounted(() => {
 .toggle-switch {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .toggle-switch input {
@@ -381,14 +439,14 @@ onMounted(() => {
   inset: 0;
   background-color: var(--border-strong);
   transition: 0.25s;
-  border-radius: 22px;
+  border-radius: 24px;
 }
 
 .switch-slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 18px;
+  width: 18px;
   left: 3px;
   bottom: 3px;
   background-color: white;
@@ -434,7 +492,8 @@ input:checked + .switch-slider:before {
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-main);
-  padding: 8px 16px;
+  padding: 10px 16px;
+  min-height: 40px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;

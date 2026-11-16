@@ -1,26 +1,46 @@
+// Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio)
+// SPDX-License-Identifier: GPL-3.0-only
+
 import { invoke } from "@tauri-apps/api/core";
-import type { EnterpriseStoryItem } from "../types";
+import type { EnterpriseStoryItem, ProjectItem } from "../types";
 import { useHaptics } from "./useHaptics";
 import { useDevice } from "./useDevice";
+import { useI18n } from "../i18n";
 
 export function useStoryActions(
   activeProjectIdGetter: () => string,
   projectNameGetter: () => string,
   exportProjectWstory: (id: string) => Promise<string>,
-  importProjectWstory: (raw: string) => Promise<any>
+  importProjectWstory: (raw: string) => Promise<ProjectItem>
 ) {
-  const { vibrateSuccess, vibrateWarning } = useHaptics();
+  const { vibrateSuccess, vibrateWarning, vibrateLight } = useHaptics();
   const { shareOrExportFile } = useDevice();
+  const { locale } = useI18n();
+
+  function buildSafeSlug(): string {
+    const base = (projectNameGetter() || "Project").replace(/[^a-zA-Zа-яА-ЯёЁäöüÄÖÜßñÑ0-9_-]/g, "_");
+    return base || "Project";
+  }
+
+  async function runSaveFlow(
+    filename: string,
+    content: string,
+    mimeType: string
+  ): Promise<string> {
+    const result = await shareOrExportFile(filename, content, mimeType);
+    if (result.saved) {
+      vibrateSuccess();
+    } else {
+      vibrateLight();
+    }
+    return result.message;
+  }
 
   async function exportWstory(): Promise<string> {
     try {
       const pid = activeProjectIdGetter();
       const raw = await exportProjectWstory(pid);
-      const cleanTitle = (projectNameGetter() || "Project").replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]/g, "_");
-      const filename = `${cleanTitle}.wstory`;
-      const status = await shareOrExportFile(filename, raw, "application/octet-stream");
-      vibrateSuccess();
-      return status;
+      return await runSaveFlow(`${buildSafeSlug()}.wstory`, raw, "application/octet-stream");
     } catch (err) {
       vibrateWarning();
       throw err;
@@ -31,9 +51,7 @@ export function useStoryActions(
     try {
       const pid = activeProjectIdGetter();
       const txt = await invoke<string>("export_manuscript_txt", { projectId: pid });
-      const status = await shareOrExportFile("Wingnite_Book.txt", txt, "text/plain");
-      vibrateSuccess();
-      return status;
+      return await runSaveFlow(`${buildSafeSlug()}.txt`, txt, "text/plain");
     } catch (err) {
       vibrateWarning();
       throw err;
@@ -43,10 +61,11 @@ export function useStoryActions(
   async function exportMarkdownBook(): Promise<string> {
     try {
       const pid = activeProjectIdGetter();
-      const md = await invoke<string>("export_manuscript", { projectId: pid });
-      const status = await shareOrExportFile("Wingnite_Manuscript.md", md, "text/markdown");
-      vibrateSuccess();
-      return status;
+      const md = await invoke<string>("export_manuscript", {
+        projectId: pid,
+        locale: locale.value,
+      });
+      return await runSaveFlow(`${buildSafeSlug()}_Manuscript.md`, md, "text/markdown");
     } catch (err) {
       vibrateWarning();
       throw err;
@@ -56,10 +75,11 @@ export function useStoryActions(
   async function exportHtmlBook(): Promise<string> {
     try {
       const pid = activeProjectIdGetter();
-      const html = await invoke<string>("compile_book_edition", { projectId: pid });
-      const status = await shareOrExportFile("Wingnite_Book_Edition.html", html, "text/html");
-      vibrateSuccess();
-      return status;
+      const html = await invoke<string>("compile_book_edition", {
+        projectId: pid,
+        locale: locale.value,
+      });
+      return await runSaveFlow(`${buildSafeSlug()}_Edition.html`, html, "text/html");
     } catch (err) {
       vibrateWarning();
       throw err;
@@ -75,6 +95,7 @@ export function useStoryActions(
         projectId: pid,
         rawText: text,
         defaultTitle: cleanTitle,
+        locale: locale.value,
       });
       vibrateSuccess();
       return imported;
@@ -84,7 +105,7 @@ export function useStoryActions(
     }
   }
 
-  async function importWstoryFile(file: File): Promise<any> {
+  async function importWstoryFile(file: File): Promise<ProjectItem> {
     try {
       const text = await file.text();
       const imported = await importProjectWstory(text);

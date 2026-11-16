@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026 Kettle Ignition Power Studio (K. I. P. Studio) -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <script setup lang="ts">
 import { ref } from "vue";
 
@@ -77,7 +79,7 @@ function handleTouchEnd() {
 .bottom-sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.78);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(14px);
   z-index: 500;
   display: flex;
@@ -89,11 +91,11 @@ function handleTouchEnd() {
   background: var(--bg-surface-solid);
   border-top: 1px solid var(--border-strong);
   border-radius: 24px 24px 0 0;
-  max-height: 86vh;
+  max-height: calc(88dvh - var(--safe-top));
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.95);
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.55);
+  padding-bottom: max(16px, var(--safe-bottom));
   animation: sheet-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   transition: transform 0.15s ease-out;
   touch-action: pan-y;
@@ -110,14 +112,14 @@ function handleTouchEnd() {
   width: 42px;
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--border-strong);
 }
 
 .sheet-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 20px 14px 20px;
+  padding: 8px max(20px, var(--safe-right)) 14px max(20px, var(--safe-left));
   border-bottom: 1px solid var(--border);
   user-select: none;
 }
@@ -129,11 +131,11 @@ function handleTouchEnd() {
 }
 
 .sheet-close-btn {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   cursor: pointer;
   display: flex;
@@ -144,7 +146,8 @@ function handleTouchEnd() {
 
 .sheet-content-scroll {
   overflow-y: auto;
-  padding: 16px 20px;
+  overscroll-behavior-y: contain;
+  padding: 16px max(18px, var(--safe-right)) 16px max(18px, var(--safe-left));
   flex: 1;
   -webkit-overflow-scrolling: touch;
 }
